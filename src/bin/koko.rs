@@ -1,5 +1,7 @@
 use kodi_kontrol::{version::get_version, server};
 
+use trust_dns_resolver::AsyncResolver;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
@@ -37,7 +39,14 @@ async fn main() -> std::io::Result<()> {
                 .about("Password for the user"),
         )
         .get_matches();
-    let kodi_address : std::net::IpAddr = args.value_of("kodi").unwrap_or("127.0.0.1").parse().unwrap();
+
+    let resolver = AsyncResolver::tokio_from_system_conf()?;
+
+    let kodi_address : std::net::IpAddr =
+	match args.value_of("kodi") {
+	    Some(host) => resolver.lookup_ip(host).await?.iter().next().unwrap(),
+	    None => "127.0.0.1".parse().unwrap()
+	};
     let file = args.value_of("file");
 
     match file {
