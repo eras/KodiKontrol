@@ -1,84 +1,19 @@
-use std::sync::Mutex;
-
-use kodi_kontrol::error;
+use kodi_kontrol::{error, kodi_rpc};
 use std::io::Write;
 
 use url::Url;
 
 use std::path::PathBuf;
 
-use async_jsonrpc_client::{
-    BatchTransport, HttpClient, Output, Params, Response, Transport, WsClient, WsClientError,
-};
-
 use actix_files::NamedFile;
 use actix_web::{web, App, HttpResponse, HttpRequest, HttpServer, Responder};
 
 use hyper::http::{Request, StatusCode};
 use hyper::{client::conn::Builder, Body};
-use tokio::net::TcpStream;
 
 use std::collections::HashMap;
 
 use serde::Serialize;
-
-struct GetResult {
-    bytes: actix_web::web::Bytes,
-    local_addr: std::net::SocketAddr,
-}
-
-// used for retrieving the schema _and mostly_ determining the client address for this address
-async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
-    let host = url
-        .host()
-        .ok_or(error::Error::MsgError(String::from("url is missing host")))?
-        .to_owned();
-    let port = url.port().unwrap_or(80);
-
-    let target_stream = TcpStream::connect(format!("{}:{}", &host, port)).await?;
-
-    let local_addr = target_stream.local_addr()?;
-
-    let (mut request_sender, connection) = Builder::new()
-        .handshake::<TcpStream, Body>(target_stream)
-        .await?;
-
-    // spawn a task to poll the connection and drive the HTTP state
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("Error in connection: {}", e);
-        }
-    });
-
-    let path = {
-        let path = String::from(url.path());
-        match url.query() {
-            None => path,
-            Some(query) => path + "?" + query,
-        }
-    };
-
-    let request = Request::builder()
-        .uri(path)
-        .header("Host", format!("{}", host))
-        .header("Accept", "application/json")
-        .method("GET")
-        .body(Body::from(""))
-        .map_err(|err| {
-            // can't deal with this without boxing?!
-            error::Error::OtherError(Box::new(err))
-        })?;
-
-    let response = request_sender.send_request(request).await?;
-    let response_status = response.status();
-    let body = response.into_body();
-    let bytes = hyper::body::to_bytes(body).await?;
-    if response_status != StatusCode::OK {
-        Err(error::Error::HttpErrorCode(response_status))
-    } else {
-        Ok(GetResult { bytes, local_addr })
-    }
-}
 
 async fn info_page(_req: HttpRequest) -> impl Responder {
     format!("koko v{}", get_version())
@@ -151,7 +86,7 @@ fn get_version() -> String {
 async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<(), error::Error> {
     let url = Url::parse(format!("http://{}:8080/jsonrpc", kodi_address).as_str())?;
     let wsurl = Url::parse(format!("ws://{}:9090/jsonrpc", kodi_address).as_str())?;
-    let result = jsonrpc_get(&url).await?;
+    let result = kodi_rpc::jsonrpc_get(&url).await?;
     // println!(
     //     "http request done from {}: {:?}",
     //     result.local_addr.ip(),
@@ -162,7 +97,7 @@ async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<(), er
     // let _settings = http_jsonrpc_get_setting(&url, "jsonrpc.tcpport").await?;
     // println!("_settings: {}", _settings);
 
-    let mut jsonrpc_session = ws_jsonrpc_connect(&wsurl).await?;
+    let mut jsonrpc_session = kodi_rpc::ws_jsonrpc_connect(&wsurl).await?;
 
     // let introspect = ws_jsonrpc_introspect(&mut jsonrpc_session).await?;
     // println!("introspect: {}", introspect);
@@ -170,7 +105,7 @@ async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<(), er
     // file.write_all(introspect.to_string().as_bytes())
     //     .expect("write failed");
 
-    let players = ws_jsonrpc_get_players(&mut jsonrpc_session).await?;
+    let players = kodi_rpc::ws_jsonrpc_get_players(&mut jsonrpc_session).await?;
     println!("players: {}", players);
 
     // let mut file = std::fs::File::create("jsonrpc.json").expect("create failed");
@@ -197,7 +132,7 @@ async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<(), er
     let url = Url::parse(format!("http://{}/file/file", server.addrs()[0]).as_str()).unwrap();
     tokio::task::spawn(async move {
 	println!("Playing: {}", &url);
-	let player = ws_jsonrpc_player_open_file(
+	let player = kodi_rpc::ws_jsonrpc_player_open_file(
     	    &mut jsonrpc_session,
     	    url.as_str(),
 	).await;
@@ -207,125 +142,6 @@ async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<(), er
     server.run().await.map_err(error::Error::IOError)?;
 
     Ok (())
-}
-
-// async fn jsonrpc_ping(url: &Url) -> Result<(), error::Error> {
-//     let client = HttpClient::new(url.as_str())?;
-//     let response = client.request("JSONRPC.Ping", None).await?;
-//     match response {
-//         Output::Success(_) => Ok(()),
-//         Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-//     }
-// }
-
-// it seems the JSONRPC port is not accessible from here.. nor is it easy for user to change.
-async fn http_jsonrpc_get_expert_settings(url: &Url) -> Result<(), error::Error> {
-    let client = HttpClient::new(url.as_str())?;
-    let response = client
-        .request(
-            "Settings.GetSettings",
-            Some(Params::Map(
-                vec![(
-                    String::from("level"),
-                    serde_json::Value::String(String::from("expert")),
-                )]
-                .into_iter()
-                .collect(),
-            )),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-    }
-}
-
-async fn http_jsonrpc_get_setting(
-    url: &Url,
-    setting: &str,
-) -> Result<serde_json::Value, error::Error> {
-    let client = HttpClient::new(url.as_str())?;
-    let response = client
-        .request(
-            "Settings.GetSettingValue",
-            Some(Params::Map(
-                vec![(
-                    String::from("setting"),
-                    serde_json::Value::String(String::from(setting)),
-                )]
-                .into_iter()
-                .collect(),
-            )),
-        )
-        .await?;
-    match response {
-        Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-    }
-}
-
-struct WsJsonRPCSession {
-    client: WsClient,
-}
-
-async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Error> {
-    let client = WsClient::new(url.as_str()).await?;
-    let response = client.request("JSONRPC.Ping", None).await?;
-    match response {
-        Output::Success(_) => Ok(WsJsonRPCSession { client }),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-    }
-}
-
-async fn ws_jsonrpc_get_players(
-    session: &mut WsJsonRPCSession,
-) -> Result<serde_json::Value, error::Error> {
-    let response = session.client.request("Player.GetPlayers", None).await?;
-    match response {
-        Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-    }
-}
-
-async fn ws_jsonrpc_player_open_file(
-    session: &mut WsJsonRPCSession,
-    file: &str,
-) -> Result<(), error::Error> {
-    let response = session
-        .client
-        .request(
-            "Player.Open",
-            Some(Params::Map(
-                vec![(
-                    String::from("item"),
-                    serde_json::Value::Object(
-                        vec![(
-                            String::from("file"),
-                            serde_json::Value::String(String::from(file)),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )]
-                .into_iter()
-                .collect(),
-            )),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-    }
-}
-
-async fn ws_jsonrpc_introspect(
-    session: &mut WsJsonRPCSession,
-) -> Result<serde_json::Value, error::Error> {
-    let response = session.client.request("JSONRPC.Introspect", None).await?;
-    match response {
-        Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
-    }
 }
 
 #[actix_web::main]
