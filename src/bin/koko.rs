@@ -56,7 +56,12 @@ async fn main() -> std::io::Result<()> {
 	    Ok(())
 	}
 	Some (file) => {
-	    match server::doit(kodi_address, file.to_string()).await {
+	    let app_data = server::make_app_data_holder(
+		server::AppData {
+		    files: vec![(String::from("file"), file.to_string())].into_iter().collect()
+		}
+	    );
+	    match server::doit(kodi_address, app_data).await {
 		Ok(()) => {
 		    eprintln!("Setup ok");
 		    Ok(())

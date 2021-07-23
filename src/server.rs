@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use crate::{error, kodi_rpc, version::get_version};
 
 use url::Url;
@@ -13,27 +15,33 @@ pub async fn info_page(_req: HttpRequest) -> impl Responder {
     format!("koko v{}", get_version())
 }
 
-pub async fn static_files(req: HttpRequest) -> HttpResponse {
-    let app_data = req.app_data::<AppData>().unwrap(); // we assume setup configures app_data
+type AppDataHolder = web::Data<Mutex<AppData>>;
 
+pub async fn static_files(req: HttpRequest) -> HttpResponse {
+    let data = req.app_data::<AppDataHolder>().unwrap(); // we assume setup configures app_data
+    let app_data = data.lock().unwrap();
     let filename = req.match_info().query("filename");
     let path: PathBuf = app_data.files.get(filename).unwrap().parse().unwrap();
     println!("Opening file {:?}", path);
     NamedFile::open(path).expect("failed to open file").into_response(&req)
 }
 
-struct AppData {
-    files: HashMap<String, String>,
+pub struct AppData {
+    pub files: HashMap<String, String>,
 }
 
-pub fn configure(cfg: &mut web::ServiceConfig, filename: String) {
-    cfg.app_data(AppData { files: vec![(String::from("file"), filename.clone())].into_iter().collect()})
+pub fn make_app_data_holder(app_data: AppData) -> AppDataHolder {
+    return web::Data::new(Mutex::new(app_data));
+}
+
+pub fn configure(cfg: &mut web::ServiceConfig, app_data: AppDataHolder) {
+    cfg.app_data(app_data)
 	.route("/", web::get().to(info_page))
 	.route("/file/{filename}", web::get().to(static_files))
 	.route("/file/{filename}", web::head().to(static_files));
 }
 
-pub async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<(), error::Error> {
+pub async fn doit(kodi_address: std::net::IpAddr, app_data: AppDataHolder) -> Result<(), error::Error> {
     let url = Url::parse(format!("http://{}:8080/jsonrpc", kodi_address).as_str())?;
     let wsurl = Url::parse(format!("ws://{}:9090/jsonrpc", kodi_address).as_str())?;
     let result = kodi_rpc::jsonrpc_get(&url).await?;
@@ -62,12 +70,12 @@ pub async fn doit(kodi_address: std::net::IpAddr, filename: String) -> Result<()
     // file.write_all(&result.bytes).expect("write failed");
 
     // let server = make_server((result.local_addr.ip(), 0), filename);
-    
+
     let server =
 	HttpServer::new(move || {
-	    let filename = filename.clone();
+	    let app_data = app_data.clone();
 	    App::new()
-		.configure(move |cfg| configure(cfg, filename.clone()))
+		.configure(move |cfg| configure(cfg, app_data))
 	})
 	.bind((result.local_addr.ip(), 0))?;
     
