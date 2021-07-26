@@ -12,6 +12,8 @@ use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 
 use std::collections::HashMap;
 
+use futures::{channel::mpsc, StreamExt};
+
 pub async fn info_page(_req: HttpRequest) -> impl Responder {
     format!("koko v{}", get_version())
 }
@@ -52,6 +54,13 @@ where
     match function.await {
         Ok(()) => (),
         Err(err) => eprintln!("augh, error: {:?}", err),
+    }
+}
+
+async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
+    if let Ok(_) = tokio::signal::ctrl_c().await {
+	eprintln!("Got ctrl-c");
+	exit_signal.try_send(()).expect("Failed to send ctrl c");
     }
 }
 
@@ -98,6 +107,9 @@ pub async fn doit(
 
     let (stop_server_tx, stop_server_rx) = tokio::sync::oneshot::channel();
 
+    let (sigint_tx, mut sigint_rx) = mpsc::channel(1);
+    tokio::spawn(handle_ctrl_c(sigint_tx));
+
     tokio::task::spawn(async move {
         handle_errors(async move {
             let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
@@ -132,16 +144,27 @@ pub async fn doit(
                 kodi_rpc::ws_jsonrpc_get_active_players(&mut jsonrpc_session).await?;
             eprintln!("active_players: {:?}", active_players);
 
-            while let Some(notification) = stream.next().await {
-		use kodi_rpc::*;
-		match notification {
-		    Notification::PlayerOnStop(_) => {
-			eprintln!("Trying to stop..");
+	    loop {
+		tokio::select!{
+		    notification = stream.next() => {
+			use kodi_rpc::*;
+			match notification {
+			    None | Some(Notification::PlayerOnStop(_)) => {
+				eprintln!("End of playback, trying to stop..");
+				stop_server_tx.send(()).expect("Failed to send to stop_server channel");
+				break;
+			    },
+			    Some(other) => {
+				eprintln!("Some other notification? {:?}", other);
+			    }
+			}
+		    },
+		    _int = sigint_rx.next() => {
+			_int.expect("Failed to receive sigint");
+			eprintln!("Ctrl-c, trying to stop..");
+			kodi_rpc::ws_jsonrpc_player_stop(&mut jsonrpc_session, 0).await.expect("TODO failed to stop playersies");
 			stop_server_tx.send(()).expect("Failed to send to stop_server channel");
 			break;
-		    },
-		    other => {
-			eprintln!("Some other notification? {:?}", other);
 		    }
 		}
 	    }
