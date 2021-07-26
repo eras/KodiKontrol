@@ -121,6 +121,8 @@ pub async fn doit(
 
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(10000);
 
+	    let mut player_id = 0u32;
+
             while let Some(notification) =
                 match tokio::time::timeout_at(deadline, stream.next()).await {
                     Ok(x) => x,
@@ -130,8 +132,9 @@ pub async fn doit(
                 eprintln!("Got notification: {:?}", notification);
 		use kodi_rpc::*;
 		match notification {
-		    Notification::PlayerOnPlay(_) => {
+		    Notification::PlayerOnPlay(data) => {
 			eprintln!("Cool, proceed");
+			player_id = data.data.player.player_id;
 			break;
 		    },
 		    other => {
@@ -162,7 +165,7 @@ pub async fn doit(
 		    _int = sigint_rx.next() => {
 			_int.expect("Failed to receive sigint");
 			eprintln!("Ctrl-c, trying to stop..");
-			kodi_rpc::ws_jsonrpc_player_stop(&mut jsonrpc_session, 0).await.expect("TODO failed to stop playersies");
+			kodi_rpc::ws_jsonrpc_player_stop(&mut jsonrpc_session, player_id).await.expect("TODO failed to stop playersies");
 			stop_server_tx.send(()).expect("Failed to send to stop_server channel");
 			break;
 		    }

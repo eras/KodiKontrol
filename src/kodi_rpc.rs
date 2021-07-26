@@ -285,7 +285,8 @@ pub enum Item {
 
 #[derive(Debug, Deserialize)]
 pub struct Player {
-    pub playerid: PlayerId,
+    #[serde(rename="playerid")]
+    pub player_id: PlayerId,
     pub speed: f64,
 }
 
