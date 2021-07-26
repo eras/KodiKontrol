@@ -176,14 +176,14 @@ pub async fn doit(
         .await;
     });
 
-    tokio::select!{
-    	done = server.run() => {
-    	    done.map_err(error::Error::IOError)?
-    	},
-    	_ = stop_server_rx => {
-	    // so what happens to server now?
-	    //server.system_exit();
-    	}
+    tokio::select! {
+        done = server.run() => {
+            done.map_err(error::Error::IOError)?
+        },
+        _ = stop_server_rx => {
+        // so what happens to server now?
+        //server.system_exit();
+        }
     }
 
     println!("fin");
