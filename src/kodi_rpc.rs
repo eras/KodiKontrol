@@ -138,9 +138,11 @@ pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Er
     }
 }
 
+type PlayerId = u32;
+
 pub async fn ws_jsonrpc_player_stop(
     session: &mut WsJsonRPCSession,
-    player_id: &str,
+    player_id: PlayerId,
 ) -> Result<serde_json::Value, error::Error> {
     let response = session
         .client
@@ -149,7 +151,7 @@ pub async fn ws_jsonrpc_player_stop(
             Some(Params::Map(
                 vec![(
                     String::from("playerid"),
-                    serde_json::Value::String(String::from(player_id)),
+                    serde_json::Value::Number(serde_json::Number::from(player_id)),
                 )]
                 .into_iter()
                 .collect(),
@@ -189,7 +191,7 @@ pub struct PlayerGetActivePlayer {
     #[serde(rename = "type")]
     pub type_: String,
 
-    pub playerid: u32,
+    pub playerid: PlayerId,
 
     pub playertype: PlayerType,
 }
@@ -283,7 +285,7 @@ pub enum Item {
 
 #[derive(Debug, Deserialize)]
 pub struct Player {
-    pub playerid: u32,
+    pub playerid: PlayerId,
     pub speed: f64,
 }
 
