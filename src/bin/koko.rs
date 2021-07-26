@@ -1,5 +1,7 @@
 use kodi_kontrol::{server, version::get_version};
 
+use std::path::PathBuf;
+
 use trust_dns_resolver::AsyncResolver;
 
 #[actix_web::main]
@@ -55,10 +57,16 @@ async fn main() -> std::io::Result<()> {
             Ok(())
         }
         Some(file) => {
+            let path: PathBuf = file.to_string().parse().expect("Failed to parse filename");
+            let file_base = path
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .expect("TODO: filename is required to be valid UTF8")
+                .to_string();
+
             let app_data = server::make_app_data_holder(server::AppData {
-                files: vec![(String::from("file"), file.to_string())]
-                    .into_iter()
-                    .collect(),
+                files: vec![(file_base, file.to_string())].into_iter().collect(),
             });
             match server::doit(kodi_address, app_data).await {
                 Ok(()) => {

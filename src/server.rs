@@ -24,11 +24,19 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
     let data = req.app_data::<AppDataHolder>().unwrap(); // we assume setup configures app_data
     let app_data = data.lock().unwrap();
     let filename = req.match_info().query("filename");
-    let path: PathBuf = app_data.files.get(filename).unwrap().parse().unwrap();
-    println!("Opening file {:?}", path);
-    NamedFile::open(path)
-        .expect("failed to open file")
-        .into_response(&req)
+    match app_data.files.get(filename) {
+        Some(path) => {
+            let path: PathBuf = path.parse().unwrap();
+            eprintln!("Opening file {:?} -> {:?}", filename, path);
+            NamedFile::open(path)
+                .expect("failed to open file")
+                .into_response(&req)
+        }
+        None => {
+            eprintln!("Did not find filename {:?}", filename);
+            HttpResponse::new(actix_web::http::StatusCode::from_u16(404u16).unwrap())
+        }
+    }
 }
 
 pub struct AppData {
@@ -59,8 +67,8 @@ where
 
 async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
     if let Ok(_) = tokio::signal::ctrl_c().await {
-	eprintln!("Got ctrl-c");
-	exit_signal.try_send(()).expect("Failed to send ctrl c");
+        eprintln!("Got ctrl-c");
+        exit_signal.try_send(()).expect("Failed to send ctrl c");
     }
 }
 
@@ -97,13 +105,37 @@ pub async fn doit(
 
     // let server = make_server((result.local_addr.ip(), 0), filename);
 
+    let filename = app_data
+        .lock()
+        .unwrap()
+        .files
+        .keys()
+        .next() // just pick the first one for now
+        .unwrap()
+        .clone();
+
     let server = HttpServer::new(move || {
         let app_data = app_data.clone();
         App::new().configure(move |cfg| configure(cfg, app_data))
     })
     .bind((result.local_addr.ip(), 0))?;
 
-    let url = Url::parse(format!("http://{}/file/file", server.addrs()[0]).as_str()).unwrap();
+    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+    const FRAGMENT: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'<')
+        .add(b'>')
+        .add(b'`')
+        .add(b'%')
+        .add(b'#');
+
+    let filename_escaped = utf8_percent_encode(&filename, FRAGMENT).to_string();
+
+    let url = Url::parse(format!("http://{}/file/", server.addrs()[0]).as_str())
+        .unwrap()
+        .join(&filename_escaped)
+        .unwrap();
 
     let (stop_server_tx, stop_server_rx) = tokio::sync::oneshot::channel();
 
