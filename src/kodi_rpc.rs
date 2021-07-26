@@ -3,8 +3,9 @@ use crate::error;
 use url::Url;
 
 use async_jsonrpc_client::{
-    HttpClient, Output, Params, Transport, WsClient,
+    HttpClient, Notification as WsNotification, Output, Params, PubsubTransport, Transport, WsClient, WsSubscription,
 };
+use serde::Deserialize;
 
 use hyper::http::{Request, StatusCode};
 use hyper::{client::conn::Builder, Body};
@@ -54,7 +55,8 @@ pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
         .body(Body::from(""))
         .map_err(|err| {
             // can't deal with this without boxing?!
-            error::Error::OtherError(Box::new(err))
+            //error::Error::OtherError(Box::new(err))
+            error::Error::MsgError(format!("Failed to handle request: {:?}", err))
         })?;
 
     let response = request_sender.send_request(request).await?;
@@ -136,6 +138,30 @@ pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Er
     }
 }
 
+pub async fn ws_jsonrpc_player_stop(
+    session: &mut WsJsonRPCSession,
+    player_id: &str,
+) -> Result<serde_json::Value, error::Error> {
+    let response = session
+        .client
+        .request(
+            "Player.Stop",
+            Some(Params::Map(
+                vec![(
+                    String::from("playerid"),
+                    serde_json::Value::String(String::from(player_id)),
+                )]
+                .into_iter()
+                .collect(),
+            )),
+        )
+        .await?;
+    match response {
+        Output::Success(response) => Ok(response.result),
+        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+    }
+}
+
 pub async fn ws_jsonrpc_get_players(
     session: &mut WsJsonRPCSession,
 ) -> Result<serde_json::Value, error::Error> {
@@ -144,6 +170,215 @@ pub async fn ws_jsonrpc_get_players(
         Output::Success(response) => Ok(response.result),
         Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub enum PlayerType {
+    #[serde(rename = "internal")]
+    Internal,
+
+    #[serde(rename = "external")]
+    External,
+
+    #[serde(rename = "remote")]
+    Remote,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlayerGetActivePlayer {
+    #[serde(rename = "type")]
+    pub type_: String,
+
+    pub playerid: u32,
+
+    pub playertype: PlayerType,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemUnknown {}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemMovie {
+    title: String,
+
+    #[serde(default)]
+    year: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemEpisode {
+    #[serde(default)]
+    episode: u32,
+
+    #[serde(default)]
+    season: u32,
+
+    #[serde(default)]
+    showtitle: String,
+
+    title: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemMusicVideo {
+    #[serde(default)]
+    album: String,
+
+    #[serde(default)]
+    artist: String,
+
+    title: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemSong {
+    #[serde(default)]
+    album: String,
+
+    #[serde(default)]
+    artist: String,
+
+    title: String,
+
+    #[serde(default)]
+    track: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemPicture {
+    pub file: String
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ItemChannel {
+    pub channeltype: String,
+    pub id: u32,
+    pub title: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum Item {
+    #[serde(rename="unknown")]
+    Unknown(ItemUnknown),
+
+    #[serde(rename="movie")]
+    Movie(ItemMovie),
+
+    #[serde(rename="episode")]
+    Episode(ItemEpisode),
+
+    #[serde(rename="musicVideo")]
+    MusicVideo(ItemMusicVideo),
+
+    #[serde(rename="song")]
+    Song(ItemSong),
+
+    #[serde(rename="picture")]
+    Picture(ItemPicture),
+
+    #[serde(rename="channel")]
+    Channel(ItemChannel),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Player {
+    pub playerid: u32,
+    pub speed: f64,
+}
+
+// Map({"data": Object({"item": Object({"title": String("file"), "type": String("movie")}), "player": Object({"playerid": Number(0), "speed": Number(1)})}), "sender": String("xbmc")})
+#[derive(Debug, Deserialize)]
+pub struct PlayerNotificationsData {
+    pub item: Item,
+    pub player: Player,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlayerStopNotificationsData {
+    pub item: Item,
+    pub end: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NotificationInfo<Content> {
+    pub data: Content,
+    pub sender: String		// "xbmc"
+}
+
+pub type PlayerGetActivePlayersResponse = Vec<PlayerGetActivePlayer>;
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "method", content = "params")]
+pub enum Notification {
+    #[serde(rename = "Player.OnPlay")]
+    PlayerOnPlay(NotificationInfo<PlayerNotificationsData>),
+
+    #[serde(rename = "Player.OnAVChange")]
+    PlayerOnAVChange(NotificationInfo<PlayerNotificationsData>),
+
+    #[serde(rename = "Player.OnAVStart")]
+    PlayerOnAVStart(NotificationInfo<PlayerNotificationsData>),
+
+    #[serde(rename = "Player.OnPause")]
+    PlayerOnPause(NotificationInfo<PlayerNotificationsData>),
+
+    #[serde(rename = "Player.OnStop")]
+    PlayerOnStop(NotificationInfo<PlayerStopNotificationsData>),
+
+    #[serde(rename = "Player.OnResume")]
+    PlayerOnResume(NotificationInfo<PlayerNotificationsData>),
+}
+
+pub async fn ws_jsonrpc_get_active_players(
+    session: &mut WsJsonRPCSession,
+) -> Result<PlayerGetActivePlayersResponse, error::Error> {
+    let response = session
+        .client
+        .request("Player.GetActivePlayers", None)
+        .await?;
+    match response {
+        Output::Success(response) => {
+            println!("got result: {:?}", response.result);
+            let players = serde_json::from_value(response.result)?;
+            Ok(players)
+        }
+        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+    }
+}
+
+pub struct Subscription {
+    ws_subscription: WsSubscription<WsNotification, ()>,
+}
+
+impl Subscription {
+    pub async fn next(&mut self) -> Option<Notification> {
+	loop {
+	    match self.ws_subscription.next().await.map(|notification| {
+		eprintln!("notification: {:?}", notification);
+		match serde_json::from_value(serde_json::to_value(&notification).expect("Failed to serialize notification")) {
+		    Ok(x) => Some(x),
+		    Err(_) => None
+		}
+	    }) {
+		Some(Some(x)) => return Some(x),
+		None => return None,
+		Some(None) => () // loop
+	    }
+	}
+    }
+}
+
+pub async fn ws_jsonrpc_subscribe(
+    session: &mut WsJsonRPCSession,
+) -> Result<Subscription, error::Error> {
+    let ws_subscription =
+	session
+        .client
+        .subscribe_all()
+        .await
+        .map_err(|err| error::Error::JsonrpcWsClientError(err))?;
+    Ok(Subscription { ws_subscription })
 }
 
 pub async fn ws_jsonrpc_player_open_file(
@@ -186,4 +421,3 @@ pub async fn ws_jsonrpc_introspect(
         Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
     }
 }
-

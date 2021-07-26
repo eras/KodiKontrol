@@ -34,8 +34,11 @@ pub enum Error {
     JsonrpcPingError(),
 
     #[error(transparent)]
-    OtherError(#[from] Box<dyn std::error::Error>),
+    JsonDecodeError(#[from] serde_json::Error),
 
+    // This would make the Error non-Sendable which is an issue
+    // #[error(transparent)]
+    // OtherError(#[from] Box<dyn std::error::Error>),
     #[error("Error: {}", .0)]
     MsgError(String),
 }
