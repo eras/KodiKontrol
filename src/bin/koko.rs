@@ -67,8 +67,9 @@ async fn main() -> std::io::Result<()> {
 
             let app_data = server::make_app_data_holder(server::AppData {
                 files: vec![(file_base, file.to_string())].into_iter().collect(),
+                kodi_address,
             });
-            match server::doit(kodi_address, app_data).await {
+            match server::doit(app_data).await {
                 Ok(()) => {
                     println!("Exiting");
                     Ok(())

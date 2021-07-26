@@ -22,24 +22,32 @@ type AppDataHolder = web::Data<Mutex<AppData>>;
 
 pub async fn static_files(req: HttpRequest) -> HttpResponse {
     let data = req.app_data::<AppDataHolder>().unwrap(); // we assume setup configures app_data
+    let addr = req.peer_addr().unwrap(); // documentation says this is not None
     let app_data = data.lock().unwrap();
-    let filename = req.match_info().query("filename");
-    match app_data.files.get(filename) {
-        Some(path) => {
-            let path: PathBuf = path.parse().unwrap();
-            eprintln!("Opening file {:?} -> {:?}", filename, path);
-            NamedFile::open(path)
-                .expect("failed to open file")
-                .into_response(&req)
+    // TODO: handle IPv4 inside IPv6
+    if addr.ip() == app_data.kodi_address {
+        let filename = req.match_info().query("filename");
+        match app_data.files.get(filename) {
+            Some(path) => {
+                let path: PathBuf = path.parse().unwrap();
+                eprintln!("Opening file {:?} -> {:?}", filename, path);
+                NamedFile::open(path)
+                    .expect("failed to open file")
+                    .into_response(&req)
+            }
+            None => {
+                eprintln!("Did not find filename {:?}", filename);
+                HttpResponse::new(actix_web::http::StatusCode::from_u16(404u16).unwrap())
+            }
         }
-        None => {
-            eprintln!("Did not find filename {:?}", filename);
-            HttpResponse::new(actix_web::http::StatusCode::from_u16(404u16).unwrap())
-        }
+    } else {
+        eprintln!("Request from invalid address: {:?}", addr);
+        HttpResponse::new(actix_web::http::StatusCode::from_u16(401u16).unwrap())
     }
 }
 
 pub struct AppData {
+    pub kodi_address: std::net::IpAddr,
     pub files: HashMap<String, String>,
 }
 
@@ -72,12 +80,21 @@ async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
     }
 }
 
-pub async fn doit(
-    kodi_address: std::net::IpAddr,
-    app_data: AppDataHolder,
-) -> Result<(), error::Error> {
-    let url = Url::parse(format!("http://{}:8080/jsonrpc", kodi_address).as_str())?;
-    let wsurl = Url::parse(format!("ws://{}:9090/jsonrpc", kodi_address).as_str())?;
+pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
+    let url = Url::parse(
+        format!(
+            "http://{}:8080/jsonrpc",
+            app_data.lock().unwrap().kodi_address
+        )
+        .as_str(),
+    )?;
+    let wsurl = Url::parse(
+        format!(
+            "ws://{}:9090/jsonrpc",
+            app_data.lock().unwrap().kodi_address
+        )
+        .as_str(),
+    )?;
     let result = kodi_rpc::jsonrpc_get(&url).await?;
     // println!(
     //     "http request done from {}: {:?}",
