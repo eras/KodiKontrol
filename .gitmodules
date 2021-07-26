@@ -1,0 +1,3 @@
+[submodule "ext/async-jsonrpc"]
+	path = ext/async-jsonrpc
+	url = ../async-jsonrpc
