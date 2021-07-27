@@ -99,10 +99,11 @@ async fn main() -> std::io::Result<()> {
         files,
         urls_order,
         kodi_address,
+        previously_logged_file: None,
     });
     match server::doit(app_data).await {
         Ok(()) => {
-            println!("Exiting");
+            log::info!("Exiting");
             Ok(())
         }
         Err(error) => {

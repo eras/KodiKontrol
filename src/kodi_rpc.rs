@@ -36,7 +36,7 @@ pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
     // spawn a task to poll the connection and drive the HTTP state
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            eprintln!("Error in connection: {}", e);
+            log::error!("Error in connection: {}", e);
         }
     });
 
@@ -635,7 +635,7 @@ pub async fn ws_jsonrpc_get_active_players(
         .await?;
     match response {
         Output::Success(response) => {
-            println!("got result: {:?}", response.result);
+            log::debug!("got result: {:?}", response.result);
             let players = serde_json::from_value(response.result)?;
             Ok(players)
         }
@@ -651,7 +651,7 @@ impl Subscription {
     pub async fn next(&mut self) -> Option<Notification> {
         loop {
             match self.ws_subscription.next().await.map(|notification| {
-                eprintln!("notification: {:?}", notification);
+                log::debug!("notification: {:?}", notification);
                 match serde_json::from_value(
                     serde_json::to_value(&notification).expect("Failed to serialize notification"),
                 ) {
@@ -892,7 +892,7 @@ pub async fn ws_jsonrpc_player_get_properties(
         .await?;
     match response {
         Output::Success(value) => {
-            eprintln!("raw properties: {:?}", value.result);
+            log::debug!("raw properties: {:?}", value.result);
             Ok(serde_json::from_value(value.result)?)
         }
         Output::Failure(value) => Err(error::Error::JsonrpcError(value)),

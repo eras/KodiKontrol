@@ -23,25 +23,33 @@ type AppDataHolder = web::Data<Mutex<AppData>>;
 pub async fn static_files(req: HttpRequest) -> HttpResponse {
     let data = req.app_data::<AppDataHolder>().unwrap(); // we assume setup configures app_data
     let addr = req.peer_addr().unwrap(); // documentation says this is not None
-    let app_data = data.lock().unwrap();
+    let mut app_data = data.lock().unwrap();
     // TODO: handle IPv4 inside IPv6
     if addr.ip() == app_data.kodi_address {
         let filename = req.match_info().query("filename");
         match app_data.files.get(filename) {
             Some(path) => {
                 let path: PathBuf = path.parse().unwrap();
-                eprintln!("Opening file {:?} -> {:?}", filename, path);
+
+                let same_as_before = match &app_data.previously_logged_file {
+                    Some(file) if file == filename => true,
+                    Some(_) | None => false,
+                };
+                if !same_as_before {
+                    log::info!("Opening file {:?} -> {:?}", filename, path);
+                }
+                app_data.previously_logged_file = Some(String::from(filename));
                 NamedFile::open(path)
                     .expect("failed to open file")
                     .into_response(&req)
             }
             None => {
-                eprintln!("Did not find filename {:?}", filename);
+                log::error!("Did not find filename {:?}", filename);
                 HttpResponse::new(actix_web::http::StatusCode::from_u16(404u16).unwrap())
             }
         }
     } else {
-        eprintln!("Request from invalid address: {:?}", addr);
+        log::error!("Request from invalid address: {:?}", addr);
         HttpResponse::new(actix_web::http::StatusCode::from_u16(401u16).unwrap())
     }
 }
@@ -50,6 +58,7 @@ pub struct AppData {
     pub kodi_address: std::net::IpAddr,
     pub files: HashMap<String, String>,
     pub urls_order: HashMap<String, usize>,
+    pub previously_logged_file: Option<String>,
 }
 
 pub fn make_app_data_holder(app_data: AppData) -> AppDataHolder {
@@ -70,13 +79,13 @@ where
 {
     match function.await {
         Ok(()) => (),
-        Err(err) => eprintln!("augh, error: {:?}", err),
+        Err(err) => log::error!("augh, error: {:?}", err),
     }
 }
 
 async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
     if let Ok(_) = tokio::signal::ctrl_c().await {
-        eprintln!("Got ctrl-c");
+        log::info!("Got ctrl-c");
         exit_signal.try_send(()).expect("Failed to send ctrl c");
     }
 }
@@ -142,7 +151,7 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
         .as_str(),
     )?;
     let result = kodi_rpc::jsonrpc_get(&url).await?;
-    // println!(
+    // log::debug!(
     //     "http request done from {}: {:?}",
     //     result.local_addr.ip(),
     //     result.bytes
@@ -150,18 +159,18 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
 
     // let _settings = http_jsonrpc_get_expert_settings(&url).await?;
     // let _settings = http_jsonrpc_get_setting(&url, "jsonrpc.tcpport").await?;
-    // println!("_settings: {}", _settings);
+    // log::debug!("_settings: {}", _settings);
 
     let mut jsonrpc_session = kodi_rpc::ws_jsonrpc_connect(&wsurl).await?;
 
     // let introspect = ws_jsonrpc_introspect(&mut jsonrpc_session).await?;
-    // println!("introspect: {}", introspect);
+    // log::debug!("introspect: {}", introspect);
     // let mut file = std::fs::File::create("introspect.json").expect("create failed");
     // file.write_all(introspect.to_string().as_bytes())
     //     .expect("write failed");
 
     let players = kodi_rpc::ws_jsonrpc_get_players(&mut jsonrpc_session).await?;
-    println!("players: {}", players);
+    log::debug!("players: {}", players);
 
     // let mut file = std::fs::File::create("jsonrpc.json").expect("create failed");
     // file.write_all(&result.bytes).expect("write failed");
@@ -201,7 +210,7 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
             use kodi_rpc::*;
 
             let playlist_id = 1;
-            eprintln!("Playing: {:?}", &urls);
+            log::info!("Playing: {:?}", &urls);
             assert!(urls.len() > 0);
             let use_playlist = urls.len() > 1;
             if !use_playlist {
@@ -210,10 +219,10 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                     file: url.to_string(),
                 });
                 let player = kodi_rpc::ws_jsonrpc_player_open(&mut jsonrpc_session, item).await?;
-                eprintln!("Playing result: {:?}", player);
+                log::debug!("Playing result: {:?}", player);
             } else {
                 // let items = kodi_rpc::ws_jsonrpc_playlist_get_items(&mut jsonrpc_session, playlist_id).await?;
-                // eprintln!("Existing playlist: {:?}", items);
+                // log::info!("Existing playlist: {:?}", items);
                 kodi_rpc::ws_jsonrpc_playlist_clear(&mut jsonrpc_session, playlist_id).await?;
                 let player = kodi_rpc::ws_jsonrpc_playlist_add(
                     &mut jsonrpc_session,
@@ -221,14 +230,14 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                     urls.iter().map(|url| url.to_string()).collect(),
                 )
                 .await?;
-                eprintln!("Enqueued result: {:?}", player);
+                log::debug!("Enqueued result: {:?}", player);
 
                 let item = PlayerOpenParamsItem::PlaylistPos {
                     playlist_id,
                     position: 0,
                 };
                 let player = kodi_rpc::ws_jsonrpc_player_open(&mut jsonrpc_session, item).await?;
-                eprintln!("Playing result: {:?}", player);
+                log::debug!("Playing result: {:?}", player);
             }
 
             kodi_rpc::ws_jsonrpc_gui_activate_window(
@@ -275,12 +284,12 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                 }
                     }
             {
-                eprintln!("Got notification: {:?}", notification);
+                log::debug!("Got notification: {:?}", notification);
                 use kodi_rpc::*;
 
                 match notification {
                     Event::Notification(Notification::PlayerOnAVStart(data)) => {
-                        eprintln!("Cool, proceed");
+                        log::debug!("Cool, proceed");
                         match state {
                             State::WaitingStart => {
                                 player_id = data.data.player.player_id;
@@ -297,7 +306,7 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                             ],
                         )
                         .await?;
-                        eprintln!("Player properties: {:?}", props);
+                        log::debug!("Player properties: {:?}", props);
                         playlist_position = props.playlist_position;
 
                         state = State::WaitingLast;
@@ -320,7 +329,7 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                             }
                         };
                         if end {
-                            eprintln!("End of playback, trying to stop..");
+                            log::debug!("End of playback, trying to stop..");
                             finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist)
                                 .await?;
                             break; // exit the loop
@@ -344,14 +353,14 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                         break; // exit the loop
                     }
                     Event::SigInt => {
-                        eprintln!("Ctrl-c, trying to stop..");
+                        log::info!("Ctrl-c, trying to stop..");
                         finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
 
                         match stop_server_tx.send(()) {
                             Ok(()) => (),
                             Err(_) => {
                                 // we're _fine_ if we cannot send to this channel: the select has already terminated at that point
-                                eprintln!("rpc_handler failed to send to stop_server_tx");
+                                log::error!("rpc_handler failed to send to stop_server_tx");
                             }
                         }
                         break; // exit the loop
@@ -361,7 +370,7 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
 
             // let active_players =
             //     kodi_rpc::ws_jsonrpc_get_active_players(&mut jsonrpc_session).await?;
-            // eprintln!("active_players: {:?}", active_players);
+            // log::info!("active_players: {:?}", active_players);
 
             Ok(())
         })
@@ -380,7 +389,7 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
 
     rpc_handler.await.expect("Failed to join rpc_handler");
 
-    println!("fin");
+    log::info!("fin");
 
     Ok(())
 }
