@@ -174,6 +174,264 @@ pub async fn ws_jsonrpc_get_players(
     }
 }
 
+#[derive(Debug, Serialize)]
+pub enum GUIWindow {
+    #[serde(rename = "accesspoints")]
+    Accespoints,
+    #[serde(rename = "addon")]
+    Addon,
+    #[serde(rename = "addonbrowser")]
+    AddonBrowser,
+    #[serde(rename = "addoninformation")]
+    AddonInformation,
+    #[serde(rename = "addonsettings")]
+    AddonSettings,
+    #[serde(rename = "appearancesettings")]
+    AppearanceSettings,
+    #[serde(rename = "busydialog")]
+    BusyDialog,
+    #[serde(rename = "busydialognocancel")]
+    BusyDialogNoCancel,
+    #[serde(rename = "contentsettings")]
+    ContentSettings,
+    #[serde(rename = "contextmenu")]
+    ContextMenu,
+    #[serde(rename = "eventlog")]
+    EventLog,
+    #[serde(rename = "extendedprogressdialog")]
+    ExtendedProgressDialog,
+    #[serde(rename = "favourites")]
+    Favourites,
+    #[serde(rename = "filebrowser")]
+    Filebrowser,
+    #[serde(rename = "filemanager")]
+    Filemanager,
+    #[serde(rename = "fullscreengame")]
+    FullscreenGame,
+    #[serde(rename = "fullscreeninfo")]
+    FullscreenInfo,
+    #[serde(rename = "fullscreenlivetv")]
+    FullscreenLiveTv,
+    #[serde(rename = "fullscreenlivetvinput")]
+    FullscreenLiveTvInput,
+    #[serde(rename = "fullscreenlivetvpreview")]
+    FullscreenLiveTvPreview,
+    #[serde(rename = "fullscreenradio")]
+    FullscreenRadio,
+    #[serde(rename = "fullscreenradioinput")]
+    FullscreenRadioInput,
+    #[serde(rename = "fullscreenradiopreview")]
+    FullscreenRadioPreview,
+    #[serde(rename = "fullscreenvideo")]
+    FullscreenVideo,
+    #[serde(rename = "gameadvancedsettings")]
+    GameAdvancedSettings,
+    #[serde(rename = "gamecontrollers")]
+    GameControllers,
+    #[serde(rename = "gameosd")]
+    GameOsd,
+    #[serde(rename = "gamepadinput")]
+    GamePadInput,
+    #[serde(rename = "games")]
+    Games,
+    #[serde(rename = "gamesettings")]
+    GameSettings,
+    #[serde(rename = "gamestretchmode")]
+    GameStretchMode,
+    #[serde(rename = "gamevideofilter")]
+    GameVideoFilter,
+    #[serde(rename = "gamevideorotation")]
+    GameVideoRotation,
+    #[serde(rename = "gamevolume")]
+    GameVolume,
+    #[serde(rename = "home")]
+    Home,
+    #[serde(rename = "infoprovidersettings")]
+    InfoproviderSettings,
+    #[serde(rename = "interfacesettings")]
+    InterfaceSettings,
+    #[serde(rename = "libexportsettings")]
+    LibexportSettings,
+    #[serde(rename = "locksettings")]
+    LockSettings,
+    #[serde(rename = "loginscreen")]
+    LoginScreen,
+    #[serde(rename = "mediafilter")]
+    MediaFilter,
+    #[serde(rename = "mediasettings")]
+    MediaSettings,
+    #[serde(rename = "mediasource")]
+    MediaSource,
+    #[serde(rename = "movieinformation")]
+    MovieInformation,
+    #[serde(rename = "music")]
+    Music,
+    #[serde(rename = "musicinformation")]
+    MusicInformation,
+    #[serde(rename = "musicosd")]
+    MusicOsd,
+    #[serde(rename = "musicplaylist")]
+    MusicPlaylist,
+    #[serde(rename = "musicplaylisteditor")]
+    MusicPlaylistEditor,
+    #[serde(rename = "networksetup")]
+    NetworkSetup,
+    #[serde(rename = "notification")]
+    Notification,
+    #[serde(rename = "numericinput")]
+    NumericInput,
+    #[serde(rename = "okdialog")]
+    OkDialog,
+    #[serde(rename = "osdaudiosettings")]
+    OsdAudioSettings,
+    #[serde(rename = "osdcmssettings")]
+    OsdCmsSettings,
+    #[serde(rename = "osdsubtitlesettings")]
+    OsdSubtitleSettings,
+    #[serde(rename = "osdvideosettings")]
+    OsdVideoSettings,
+    #[serde(rename = "peripheralsettings")]
+    PeripheralSettings,
+    #[serde(rename = "pictureinfo")]
+    PictureInfo,
+    #[serde(rename = "pictures")]
+    Pictures,
+    #[serde(rename = "playercontrols")]
+    PlayerControls,
+    #[serde(rename = "playerprocessinfo")]
+    PlayerProcessInfo,
+    #[serde(rename = "playersettings")]
+    PlayerSettings,
+    #[serde(rename = "profiles")]
+    Profiles,
+    #[serde(rename = "profilesettings")]
+    ProfileSettings,
+    #[serde(rename = "programs")]
+    Programs,
+    #[serde(rename = "progressdialog")]
+    ProgressDialog,
+    #[serde(rename = "pvrchannelguide")]
+    PvrChannelGuide,
+    #[serde(rename = "pvrchannelmanager")]
+    PvrChannelManager,
+    #[serde(rename = "pvrchannelscan")]
+    PvrChannelScan,
+    #[serde(rename = "pvrgroupmanager")]
+    PvrGroupManager,
+    #[serde(rename = "pvrguideinfo")]
+    PvrGuideInfo,
+    #[serde(rename = "pvrguidesearch")]
+    PvrGuideSearch,
+    #[serde(rename = "pvrosdchannels")]
+    PvrOsdChannels,
+    #[serde(rename = "pvrosdguide")]
+    PvrOsdGuide,
+    #[serde(rename = "pvrosdteletext")]
+    PvrOsdTeletext,
+    #[serde(rename = "pvrradiordsinfo")]
+    PvrRadiordsInfo,
+    #[serde(rename = "pvrrecordinginfo")]
+    PvrRecordingInfo,
+    #[serde(rename = "pvrsettings")]
+    PvrSettings,
+    #[serde(rename = "pvrtimersetting")]
+    PvrTimerSetting,
+    #[serde(rename = "pvrupdateprogress")]
+    PvrUpdateProgress,
+    #[serde(rename = "radiochannels")]
+    RadioChannels,
+    #[serde(rename = "radioguide")]
+    RadioGuide,
+    #[serde(rename = "radiorecordings")]
+    RadioRecordings,
+    #[serde(rename = "radiosearch")]
+    RadioSearch,
+    #[serde(rename = "radiotimerrules")]
+    RadioTimerRules,
+    #[serde(rename = "radiotimers")]
+    RadioTimers,
+    #[serde(rename = "screencalibration")]
+    ScreenCalibration,
+    #[serde(rename = "screensaver")]
+    ScreenSaver,
+    #[serde(rename = "seekbar")]
+    Seekbar,
+    #[serde(rename = "selectdialog")]
+    SelectDialog,
+    #[serde(rename = "servicesettings")]
+    ServiceSettings,
+    #[serde(rename = "settings")]
+    Settings,
+    #[serde(rename = "shutdownmenu")]
+    ShutdownMenu,
+    #[serde(rename = "skinsettings")]
+    SkinSettings,
+    #[serde(rename = "sliderdialog")]
+    SliderDialog,
+    #[serde(rename = "slideshow")]
+    SlideShow,
+    #[serde(rename = "smartplaylisteditor")]
+    SmartPlaylistEditor,
+    #[serde(rename = "smartplaylistrule")]
+    SmartPlaylistRule,
+    #[serde(rename = "songinformation")]
+    SongInformation,
+    #[serde(rename = "splash")]
+    Splash,
+    #[serde(rename = "startup")]
+    Startup,
+    #[serde(rename = "startwindow")]
+    StartWindow,
+    #[serde(rename = "submenu")]
+    SubMenu,
+    #[serde(rename = "subtitlesearch")]
+    SubtitleSearch,
+    #[serde(rename = "systeminfo")]
+    SystemInfo,
+    #[serde(rename = "systemsettings")]
+    SystemSettings,
+    #[serde(rename = "teletext")]
+    Teletext,
+    #[serde(rename = "textviewer")]
+    TextViewer,
+    #[serde(rename = "tvchannels")]
+    TvChannels,
+    #[serde(rename = "tvguide")]
+    TvGuide,
+    #[serde(rename = "tvrecordings")]
+    TvRecordings,
+    #[serde(rename = "tvsearch")]
+    TvSearch,
+    #[serde(rename = "tvtimerrules")]
+    TvTimerRules,
+    #[serde(rename = "tvtimers")]
+    TvTimers,
+    #[serde(rename = "videobookmarks")]
+    VideoBookmarks,
+    #[serde(rename = "videomenu")]
+    VideoMenu,
+    #[serde(rename = "videoosd")]
+    VideoOsd,
+    #[serde(rename = "videoplaylist")]
+    VideoPlaylist,
+    #[serde(rename = "videos")]
+    Videos,
+    #[serde(rename = "videotimeseek")]
+    VideoTimeSeek,
+    #[serde(rename = "virtualkeyboard")]
+    VirtualKeyboard,
+    #[serde(rename = "visualisation")]
+    Visualisation,
+    #[serde(rename = "visualisationpresetlist")]
+    VisualisationPresetList,
+    #[serde(rename = "volumebar")]
+    Volumebar,
+    #[serde(rename = "weather")]
+    Weather,
+    #[serde(rename = "yesnodialog")]
+    YesNoDialog,
+}
+
 #[derive(Debug, Deserialize)]
 pub enum PlayerType {
     #[serde(rename = "internal")]
