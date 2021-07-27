@@ -323,7 +323,7 @@ impl Session {
 
             enum State {
                 WaitingStart,
-                WaitingTimeout,
+                WaitingTimeout(tokio::time::Instant),
                 WaitingLast,
             }
 
@@ -336,23 +336,21 @@ impl Session {
 
             let mut state = State::WaitingStart;
 
-            let mut deadline = None;
-
             while let Some(notification) = tokio::select! {
-                    notification = stream.next() => {
-            match notification {
-                Some(ev) => Some(Event::Notification(ev)),
-                None => None,
+                        notification = stream.next() => {
+                match notification {
+                    Some(ev) => Some(Event::Notification(ev)),
+                    None => None,
+                            }
+                        }
+                        _int = sigint_rx.next() => Some(Event::SigInt),
+            _delay = tokio::time::sleep_until(match state {
+                State::WaitingTimeout(deadline) => deadline,
+                _ => far_future(),
+            }) => {
+                Some(Event::Deadline)
                         }
                     }
-                    _int = sigint_rx.next() => Some(Event::SigInt),
-            _delay = tokio::time::sleep_until(match deadline {
-                        None => far_future(),
-            Some(deadline) => deadline
-            }) => {
-            Some(Event::Deadline)
-                    }
-                }
             {
                 log::debug!("Got notification: {:?}", notification);
                 use kodi_rpc::*;
@@ -405,19 +403,13 @@ impl Session {
                             break; // exit the loop
                         } else {
                             // another trick! we expect the new media to start playing in a short while.
-                            deadline = Some(
-                                tokio::time::Instant::now()
-                                    + std::time::Duration::from_millis(5000),
-                            );
-                            state = State::WaitingTimeout;
+                            let deadline = tokio::time::Instant::now()
+                                + std::time::Duration::from_millis(5000);
+                            state = State::WaitingTimeout(deadline);
                         }
                     }
                     Event::Notification(_) => (), // ignore
                     Event::Deadline => {
-                        assert!(match state {
-                            State::WaitingTimeout => true,
-                            _ => false,
-                        });
                         // so it appears we have finished playing; do the finishing steps
                         finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
                         break; // exit the loop
