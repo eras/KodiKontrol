@@ -1,9 +1,29 @@
+use clap::ArgMatches;
 use kodi_kontrol::{server, version::get_version};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use trust_dns_resolver::AsyncResolver;
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    ResolveError(#[from] trust_dns_resolver::error::ResolveError),
+}
+
+async fn resolve_address(args: &ArgMatches) -> Result<std::net::IpAddr, Error> {
+    let resolver = AsyncResolver::tokio_from_system_conf()?;
+
+    let kodi_address: std::net::IpAddr = match args.value_of("kodi") {
+        Some(host) => resolver.lookup_ip(host).await?.iter().next().unwrap(),
+        None => "127.0.0.1".parse().unwrap(),
+    };
+
+    Ok(kodi_address)
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -43,11 +63,14 @@ async fn main() -> std::io::Result<()> {
         )
         .get_matches();
 
-    let resolver = AsyncResolver::tokio_from_system_conf()?;
-
-    let kodi_address: std::net::IpAddr = match args.value_of("kodi") {
-        Some(host) => resolver.lookup_ip(host).await?.iter().next().unwrap(),
-        None => "127.0.0.1".parse().unwrap(),
+    let kodi_address = {
+        match resolve_address(&args).await {
+            Ok(x) => x,
+            Err(err) => {
+                eprintln!("error: {:?}", err);
+                return Ok(());
+            }
+        }
     };
 
     let mut files = HashMap::new();
@@ -101,15 +124,38 @@ async fn main() -> std::io::Result<()> {
         kodi_address,
         previously_logged_file: None,
     });
-    match server::doit(app_data).await {
-        Ok(()) => {
-            log::info!("Exiting");
-            Ok(())
+    let (session_tx, session_rx) = tokio::sync::oneshot::channel::<server::Session>();
+    let app_join: tokio::task::JoinHandle<Result<(), kodi_kontrol::error::Error>> =
+        tokio::task::spawn(async move {
+            log::debug!("Waiting session");
+            let session = session_rx.await.expect("Failed to receive session");
+            log::debug!("Got session");
+            match session.finish().await {
+                Ok(()) => {
+                    log::info!("Exiting");
+                    Ok(())
+                }
+                Err(error) => {
+                    eprintln!("Setup with error: {}", error);
+                    actix_rt::System::current().stop();
+                    Ok(())
+                }
+            }
+        });
+
+    match server::Session::new(app_data, session_tx).await {
+        Ok(()) => (),
+        Err(err) => {
+            eprintln!("error: {:?}", err);
+            return Ok(());
         }
-        Err(error) => {
-            eprintln!("Setup with error: {}", error);
-            actix_rt::System::current().stop();
-            Ok(())
+    }
+
+    match app_join.await.expect("Failed to join app_join") {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!("error: {:?}", err);
+            return Ok(());
         }
     }
 }

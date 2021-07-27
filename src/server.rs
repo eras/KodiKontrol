@@ -83,6 +83,14 @@ where
     }
 }
 
+pub async fn get_errors<F>(function: F) -> Result<(), error::Error>
+where
+    F: Future<Output = Result<(), error::Error>> + Send + 'static,
+    // F: Fn() -> Result<(), error::Error>,
+{
+    function.await
+}
+
 async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
     if let Ok(_) = tokio::signal::ctrl_c().await {
         log::info!("Got ctrl-c");
@@ -135,76 +143,138 @@ async fn finish(
     Ok(())
 }
 
-pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
-    let url = Url::parse(
-        format!(
-            "http://{}:8080/jsonrpc",
-            app_data.lock().unwrap().kodi_address
-        )
-        .as_str(),
-    )?;
-    let wsurl = Url::parse(
-        format!(
-            "ws://{}:9090/jsonrpc",
-            app_data.lock().unwrap().kodi_address
-        )
-        .as_str(),
-    )?;
-    let result = kodi_rpc::jsonrpc_get(&url).await?;
-    // log::debug!(
-    //     "http request done from {}: {:?}",
-    //     result.local_addr.ip(),
-    //     result.bytes
-    // );
+#[derive(Debug)]
+pub struct Session {
+    rpc_handler_done_rx: tokio::sync::oneshot::Receiver<Result<(), error::Error>>,
+}
 
-    // let _settings = http_jsonrpc_get_expert_settings(&url).await?;
-    // let _settings = http_jsonrpc_get_setting(&url, "jsonrpc.tcpport").await?;
-    // log::debug!("_settings: {}", _settings);
-
-    let mut jsonrpc_session = kodi_rpc::ws_jsonrpc_connect(&wsurl).await?;
-
-    // let introspect = ws_jsonrpc_introspect(&mut jsonrpc_session).await?;
-    // log::debug!("introspect: {}", introspect);
-    // let mut file = std::fs::File::create("introspect.json").expect("create failed");
-    // file.write_all(introspect.to_string().as_bytes())
-    //     .expect("write failed");
-
-    let players = kodi_rpc::ws_jsonrpc_get_players(&mut jsonrpc_session).await?;
-    log::debug!("players: {}", players);
-
-    // let mut file = std::fs::File::create("jsonrpc.json").expect("create failed");
-    // file.write_all(&result.bytes).expect("write failed");
-
-    // let server = make_server((result.local_addr.ip(), 0), filename);
-
-    let files = app_data.lock().unwrap().files.clone();
-    let urls_order = app_data.lock().unwrap().urls_order.clone();
-
-    let server = HttpServer::new(move || {
-        let app_data = app_data.clone();
-        App::new().configure(move |cfg| configure(cfg, app_data))
-    })
-    .bind((result.local_addr.ip(), 0))?;
-
-    let mut ordered_urls: Vec<(usize, Url)> = files
-        .iter()
-        .map(|(url, _file)| {
-            (
-                urls_order.get(url).unwrap().clone(),
-                url_for_file(server.addrs()[0], url).expect("Failed to create URL for file"),
+impl Session {
+    // will return once the server has finished
+    pub async fn new(
+        app_data: AppDataHolder,
+        result: tokio::sync::oneshot::Sender<Session>,
+    ) -> Result<(), error::Error> {
+        let url = Url::parse(
+            format!(
+                "http://{}:8080/jsonrpc",
+                app_data.lock().unwrap().kodi_address
             )
+            .as_str(),
+        )?;
+        let wsurl = Url::parse(
+            format!(
+                "ws://{}:9090/jsonrpc",
+                app_data.lock().unwrap().kodi_address
+            )
+            .as_str(),
+        )?;
+        let jsonrpc_info = kodi_rpc::jsonrpc_get(&url).await?;
+
+        let mut jsonrpc_session: kodi_rpc::WsJsonRPCSession =
+            kodi_rpc::ws_jsonrpc_connect(&wsurl).await?;
+
+        // let introspect = ws_jsonrpc_introspect(&mut self.jsonrpc_session).await?;
+        // log::debug!("introspect: {}", introspect);
+        // let mut file = std::fs::File::create("introspect.json").expect("create failed");
+        // file.write_all(introspect.to_string().as_bytes())
+        //     .expect("write failed");
+
+        let players = kodi_rpc::ws_jsonrpc_get_players(&mut jsonrpc_session).await?;
+        log::debug!("players: {}", players);
+
+        // let mut file = std::fs::File::create("jsonrpc.json").expect("create failed");
+        // file.write_all(&result.bytes).expect("write failed");
+
+        // let server = make_server((result.local_addr.ip(), 0), filename);
+
+        let files = app_data.lock().unwrap().files.clone();
+        let urls_order = app_data.lock().unwrap().urls_order.clone();
+
+        let (rpc_handler_done_tx, rpc_handler_done_rx) = tokio::sync::oneshot::channel();
+        let (stop_server_tx, stop_server_rx) = tokio::sync::oneshot::channel();
+        let (server_info_tx, server_info_rx) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let server_info = server_info_rx.await.expect("Failed to receive server_info");
+            let mut ordered_urls: Vec<(usize, Url)> = files
+                .iter()
+                .map(|(url, _file)| {
+                    (
+                        urls_order.get(url).unwrap().clone(),
+                        url_for_file(server_info, url).expect("Failed to create URL for file"),
+                    )
+                })
+                .collect();
+            ordered_urls.sort();
+            let urls: Vec<Url> = ordered_urls.into_iter().map(|(_k, v)| v).collect();
+
+            let (sigint_tx, sigint_rx) = mpsc::channel(1);
+            tokio::spawn(handle_ctrl_c(sigint_tx));
+
+            tokio::task::spawn(Self::rpc_handler(
+                jsonrpc_session,
+                urls.clone(),
+                sigint_rx,
+                stop_server_tx,
+                rpc_handler_done_tx,
+            ));
+
+            let session = Session {
+                rpc_handler_done_rx,
+            };
+
+            result
+                .send(session)
+                .expect("Failed to send result to caller");
+        });
+
+        Self::run_server(
+            app_data,
+            jsonrpc_info.local_addr.ip(),
+            server_info_tx,
+            stop_server_rx,
+        )
+        .await;
+
+        Ok(())
+    }
+
+    async fn run_server(
+        app_data: AppDataHolder,
+        local_ip: std::net::IpAddr,
+        server_info_tx: tokio::sync::oneshot::Sender<std::net::SocketAddr>,
+        stop_server_rx: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let server = HttpServer::new(move || {
+            let app_data = app_data.clone();
+            App::new().configure(move |cfg| configure(cfg, app_data))
         })
-        .collect();
-    ordered_urls.sort();
-    let urls: Vec<Url> = ordered_urls.into_iter().map(|(_k, v)| v).collect();
+        .bind((local_ip, 0))
+        .expect("failed to construct server");
 
-    let (stop_server_tx, stop_server_rx) = tokio::sync::oneshot::channel();
+        server_info_tx
+            .send(server.addrs()[0])
+            .expect("Failed to send server_info");
 
-    let (sigint_tx, mut sigint_rx) = mpsc::channel(1);
-    tokio::spawn(handle_ctrl_c(sigint_tx));
+        tokio::select! {
+            done = server.run() => {
+                done.map_err(error::Error::IOError).expect("Failed to run server")
+            },
+            _ = stop_server_rx => {
+                // so what happens to server now?
+                //server.system_exit();
+            }
+        }
+    }
 
-    let rpc_handler: tokio::task::JoinHandle<()> = tokio::task::spawn(async move {
-        handle_errors(async move {
+    async fn rpc_handler(
+        mut jsonrpc_session: kodi_rpc::WsJsonRPCSession,
+        urls: Vec<Url>,
+        mut sigint_rx: mpsc::Receiver<()>,
+        stop_server_tx: tokio::sync::oneshot::Sender<()>,
+        rpc_handler_done_tx: tokio::sync::oneshot::Sender<Result<(), error::Error>>,
+    ) {
+        let result = get_errors(async move {
             let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
 
             use kodi_rpc::*;
@@ -269,20 +339,20 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
             let mut deadline = None;
 
             while let Some(notification) = tokio::select! {
-                        notification = stream.next() => {
-                    match notification {
-                    Some(ev) => Some(Event::Notification(ev)),
-                    None => None,
-                            }
+                    notification = stream.next() => {
+            match notification {
+                Some(ev) => Some(Event::Notification(ev)),
+                None => None,
                         }
-                        _int = sigint_rx.next() => Some(Event::SigInt),
+                    }
+                    _int = sigint_rx.next() => Some(Event::SigInt),
             _delay = tokio::time::sleep_until(match deadline {
                         None => far_future(),
-                Some(deadline) => deadline
+            Some(deadline) => deadline
             }) => {
-                    Some(Event::Deadline)
-                }
+            Some(Event::Deadline)
                     }
+                }
             {
                 log::debug!("Got notification: {:?}", notification);
                 use kodi_rpc::*;
@@ -368,28 +438,22 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
                 }
             }
 
-            // let active_players =
-            //     kodi_rpc::ws_jsonrpc_get_active_players(&mut jsonrpc_session).await?;
-            // log::info!("active_players: {:?}", active_players);
-
             Ok(())
         })
         .await;
-    });
-
-    tokio::select! {
-        done = server.run() => {
-            done.map_err(error::Error::IOError)?
-        },
-        _ = stop_server_rx => {
-        // so what happens to server now?
-        //server.system_exit();
-        }
+        rpc_handler_done_tx
+            .send(result)
+            .expect("Failed to send rpc_handler_done");
     }
 
-    rpc_handler.await.expect("Failed to join rpc_handler");
+    pub async fn finish(self: Self) -> Result<(), error::Error> {
+        &self
+            .rpc_handler_done_rx
+            .await
+            .expect("Failed to receive from rpc_handler")?;
 
-    log::info!("fin");
+        log::info!("fin");
 
-    Ok(())
+        Ok(())
+    }
 }
