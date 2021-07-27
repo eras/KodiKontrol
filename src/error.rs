@@ -30,8 +30,8 @@ pub enum Error {
     #[error(transparent)]
     JsonrpcWsClientError(#[from] async_jsonrpc_client::WsClientError),
 
-    #[error("Failed to do JSONRPC Ping")]
-    JsonrpcPingError(),
+    #[error("Failed to communicate over JSONRPC")]
+    JsonrpcError(async_jsonrpc_client::Failure),
 
     #[error(transparent)]
     JsonDecodeError(#[from] serde_json::Error),

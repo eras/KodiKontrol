@@ -75,7 +75,7 @@ pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
 //     let response = client.request("JSONRPC.Ping", None).await?;
 //     match response {
 //         Output::Success(_) => Ok(()),
-//         Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+//         Output::Failure(value) => Err(error::Error::JsonrpcPingError(value)),
 //     }
 // }
 
@@ -97,7 +97,7 @@ pub async fn http_jsonrpc_get_expert_settings(url: &Url) -> Result<(), error::Er
         .await?;
     match response {
         Output::Success(_) => Ok(()),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -121,7 +121,7 @@ pub async fn http_jsonrpc_get_setting(
         .await?;
     match response {
         Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -134,7 +134,7 @@ pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Er
     let response = client.request("JSONRPC.Ping", None).await?;
     match response {
         Output::Success(_) => Ok(WsJsonRPCSession { client }),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -160,7 +160,7 @@ pub async fn ws_jsonrpc_player_stop(
         .await?;
     match response {
         Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -170,7 +170,7 @@ pub async fn ws_jsonrpc_get_players(
     let response = session.client.request("Player.GetPlayers", None).await?;
     match response {
         Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -346,7 +346,7 @@ pub async fn ws_jsonrpc_get_active_players(
             let players = serde_json::from_value(response.result)?;
             Ok(players)
         }
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -411,7 +411,7 @@ pub async fn ws_jsonrpc_player_open_file(
         .await?;
     match response {
         Output::Success(_) => Ok(()),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
 
@@ -421,6 +421,6 @@ pub async fn ws_jsonrpc_introspect(
     let response = session.client.request("JSONRPC.Introspect", None).await?;
     match response {
         Output::Success(response) => Ok(response.result),
-        Output::Failure(_) => Err(error::Error::JsonrpcPingError()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }
