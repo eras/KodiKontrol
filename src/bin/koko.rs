@@ -1,5 +1,5 @@
 use clap::ArgMatches;
-use kodi_kontrol::{server, version::get_version};
+use kodi_kontrol::{exit, server, version::get_version};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +28,7 @@ async fn resolve_address(args: &ArgMatches) -> Result<std::net::IpAddr, Error> {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
+    let exit = exit::Exit::new();
 
     let args = clap::App::new("koko")
         .version(get_version().as_str())
@@ -125,13 +126,15 @@ async fn main() -> std::io::Result<()> {
         previously_logged_file: None,
     });
     let (session_tx, session_rx) = tokio::sync::oneshot::channel::<server::Session>();
-    let app_join: tokio::task::JoinHandle<Result<(), kodi_kontrol::error::Error>> =
+    let app_join: tokio::task::JoinHandle<Result<(), kodi_kontrol::error::Error>> = {
+        let exit = exit.clone();
         tokio::task::spawn(async move {
             log::debug!("Waiting session");
             let session = session_rx.await.expect("Failed to receive session");
             log::debug!("Got session");
             match session.finish().await {
                 Ok(()) => {
+                    exit.signal();
                     log::info!("Exiting");
                     Ok(())
                 }
@@ -141,9 +144,10 @@ async fn main() -> std::io::Result<()> {
                     Ok(())
                 }
             }
-        });
+        })
+    };
 
-    match server::Session::new(app_data, session_tx).await {
+    match server::Session::new(app_data, session_tx, exit.clone()).await {
         Ok(()) => (),
         Err(err) => {
             eprintln!("error: {:?}", err);
