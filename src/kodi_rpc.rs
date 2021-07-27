@@ -3,9 +3,10 @@ use crate::error;
 use url::Url;
 
 use async_jsonrpc_client::{
-    HttpClient, Notification as WsNotification, Output, Params, PubsubTransport, Transport, WsClient, WsSubscription,
+    HttpClient, Notification as WsNotification, Output, Params, PubsubTransport, Transport,
+    WsClient, WsSubscription,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use hyper::http::{Request, StatusCode};
 use hyper::{client::conn::Builder, Body};
@@ -138,7 +139,7 @@ pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Er
     }
 }
 
-type PlayerId = u32;
+pub type PlayerId = u32;
 
 pub async fn ws_jsonrpc_player_stop(
     session: &mut WsJsonRPCSession,
@@ -432,8 +433,47 @@ pub enum GUIWindow {
     YesNoDialog,
 }
 
+pub type PlaylistId = i32; // 0..2, but default is -1
+pub type PlaylistPosition = i32; // positive but default is -1
+
+fn default_playlist_id() -> PlaylistId {
+    return -1;
+}
+
+fn default_playlist_position() -> PlaylistPosition {
+    return -1;
+}
+
+// "Playlist.Item"
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PlaylistItem {
+    File { file: String },
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlaylistAddParams {
+    #[serde(rename = "playlistid")]
+    pub playlist_id: PlaylistId,
+
+    #[serde(rename = "item")]
+    pub items: Vec<PlaylistItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlaylistClearParams {
+    #[serde(rename = "playlistid")]
+    pub playlist_id: PlaylistId,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlaylistGetItemsParams {
+    #[serde(rename = "playlistid")]
+    pub playlist_id: PlaylistId,
+}
+
 #[derive(Debug, Deserialize)]
-pub enum PlayerType {
+pub enum ActivePlayerType {
     #[serde(rename = "internal")]
     Internal,
 
@@ -445,105 +485,100 @@ pub enum PlayerType {
 }
 
 #[derive(Debug, Deserialize)]
+pub enum PlayerType {
+    #[serde(rename = "video")]
+    Video,
+
+    #[serde(rename = "audio")]
+    Audio,
+
+    #[serde(rename = "picture")]
+    Picture,
+}
+
+impl Default for PlayerType {
+    fn default() -> PlayerType {
+        PlayerType::Video
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PlayerGetActivePlayer {
     #[serde(rename = "type")]
     pub type_: String,
 
     pub playerid: PlayerId,
 
-    pub playertype: PlayerType,
+    pub playertype: ActivePlayerType,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ItemUnknown {}
-
-#[derive(Debug, Deserialize)]
-pub struct ItemMovie {
-    title: String,
-
-    #[serde(default)]
-    year: u32,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ItemEpisode {
-    #[serde(default)]
-    episode: u32,
-
-    #[serde(default)]
-    season: u32,
-
-    #[serde(default)]
-    showtitle: String,
-
-    title: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ItemMusicVideo {
-    #[serde(default)]
-    album: String,
-
-    #[serde(default)]
-    artist: String,
-
-    title: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ItemSong {
-    #[serde(default)]
-    album: String,
-
-    #[serde(default)]
-    artist: String,
-
-    title: String,
-
-    #[serde(default)]
-    track: u32,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ItemPicture {
-    pub file: String
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ItemChannel {
-    pub channeltype: String,
-    pub id: u32,
-    pub title: String,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum Item {
-    #[serde(rename="unknown")]
-    Unknown(ItemUnknown),
+pub enum NotificationsItem {
+    #[serde(rename = "unknown")]
+    Unknown {},
 
-    #[serde(rename="movie")]
-    Movie(ItemMovie),
+    #[serde(rename = "movie")]
+    Movie {
+        title: String,
 
-    #[serde(rename="episode")]
-    Episode(ItemEpisode),
+        #[serde(default)]
+        year: u32,
+    },
 
-    #[serde(rename="musicVideo")]
-    MusicVideo(ItemMusicVideo),
+    #[serde(rename = "episode")]
+    Episode {
+        #[serde(default)]
+        episode: u32,
 
-    #[serde(rename="song")]
-    Song(ItemSong),
+        #[serde(default)]
+        season: u32,
 
-    #[serde(rename="picture")]
-    Picture(ItemPicture),
+        #[serde(default)]
+        showtitle: String,
 
-    #[serde(rename="channel")]
-    Channel(ItemChannel),
+        title: String,
+    },
+
+    #[serde(rename = "musicvideo")]
+    MusicVideo {
+        #[serde(default)]
+        album: String,
+
+        #[serde(default)]
+        artist: String,
+
+        title: String,
+    },
+
+    #[serde(rename = "song")]
+    Song {
+        #[serde(default)]
+        album: String,
+
+        #[serde(default)]
+        artist: String,
+
+        title: String,
+
+        #[serde(default)]
+        track: u32,
+    },
+
+    #[serde(rename = "picture")]
+    Picture { file: String },
+
+    #[serde(rename = "channel")]
+    Channel {
+        channeltype: String,
+        id: u32,
+        title: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Player {
-    #[serde(rename="playerid")]
+    #[serde(rename = "playerid")]
     pub player_id: PlayerId,
     pub speed: f64,
 }
@@ -551,20 +586,20 @@ pub struct Player {
 // Map({"data": Object({"item": Object({"title": String("file"), "type": String("movie")}), "player": Object({"playerid": Number(0), "speed": Number(1)})}), "sender": String("xbmc")})
 #[derive(Debug, Deserialize)]
 pub struct PlayerNotificationsData {
-    pub item: Item,
+    pub item: NotificationsItem,
     pub player: Player,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PlayerStopNotificationsData {
-    pub item: Item,
+    pub item: NotificationsItem,
     pub end: bool,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationInfo<Content> {
     pub data: Content,
-    pub sender: String		// "xbmc"
+    pub sender: String, // "xbmc"
 }
 
 pub type PlayerGetActivePlayersResponse = Vec<PlayerGetActivePlayer>;
@@ -614,27 +649,28 @@ pub struct Subscription {
 
 impl Subscription {
     pub async fn next(&mut self) -> Option<Notification> {
-	loop {
-	    match self.ws_subscription.next().await.map(|notification| {
-		eprintln!("notification: {:?}", notification);
-		match serde_json::from_value(serde_json::to_value(&notification).expect("Failed to serialize notification")) {
-		    Ok(x) => Some(x),
-		    Err(_) => None
-		}
-	    }) {
-		Some(Some(x)) => return Some(x),
-		None => return None,
-		Some(None) => () // loop
-	    }
-	}
+        loop {
+            match self.ws_subscription.next().await.map(|notification| {
+                eprintln!("notification: {:?}", notification);
+                match serde_json::from_value(
+                    serde_json::to_value(&notification).expect("Failed to serialize notification"),
+                ) {
+                    Ok(x) => Some(x),
+                    Err(_) => None,
+                }
+            }) {
+                Some(Some(x)) => return Some(x),
+                None => return None,
+                Some(None) => (), // loop
+            }
+        }
     }
 }
 
 pub async fn ws_jsonrpc_subscribe(
     session: &mut WsJsonRPCSession,
 ) -> Result<Subscription, error::Error> {
-    let ws_subscription =
-	session
+    let ws_subscription = session
         .client
         .subscribe_all()
         .await
@@ -642,29 +678,299 @@ pub async fn ws_jsonrpc_subscribe(
     Ok(Subscription { ws_subscription })
 }
 
-pub async fn ws_jsonrpc_player_open_file(
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum PlayerOpenParamsItem {
+    PlaylistPos {
+        #[serde(rename = "playlistid")]
+        playlist_id: PlaylistId,
+        position: PlaylistPosition,
+    },
+    PlaylistItem(PlaylistItem),
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlayerOpenParams {
+    pub item: PlayerOpenParamsItem,
+}
+
+#[derive(Debug, Serialize)]
+pub enum PlayerPropertyName {
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "partymode")]
+    PartyMode,
+    #[serde(rename = "speed")]
+    Speed,
+    #[serde(rename = "time")]
+    Time,
+    #[serde(rename = "percentage")]
+    Percentage,
+    #[serde(rename = "totaltime")]
+    TotalTime,
+    #[serde(rename = "playlistid")]
+    PlaylistId,
+    #[serde(rename = "position")]
+    Position,
+    #[serde(rename = "repeat")]
+    Repeat,
+    #[serde(rename = "shuffled")]
+    Shuffled,
+    #[serde(rename = "canseek")]
+    CanSeek,
+    #[serde(rename = "canchangespeed")]
+    CanChangeSpeed,
+    #[serde(rename = "canmove")]
+    CanMove,
+    #[serde(rename = "canzoom")]
+    CanZoom,
+    #[serde(rename = "canrotate")]
+    CanRotate,
+    #[serde(rename = "canshuffle")]
+    CanShuffle,
+    #[serde(rename = "canrepeat")]
+    CanRepeat,
+    #[serde(rename = "currentaudiostream")]
+    CurrentAudioStream,
+    #[serde(rename = "audiostreams")]
+    AudioStreams,
+    #[serde(rename = "subtitleenabled")]
+    SubtitleEnabled,
+    #[serde(rename = "currentsubtitle")]
+    CurrentSubtitle,
+    #[serde(rename = "subtitles")]
+    Subtitles,
+    #[serde(rename = "live")]
+    Live,
+    #[serde(rename = "currentvideostream")]
+    CurrentVideoStream,
+    #[serde(rename = "videostreams")]
+    VideoStreams,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlayerGetPropertiesParams {
+    #[serde(rename = "playerid")]
+    pub player_id: PlayerId,
+    pub properties: Vec<PlayerPropertyName>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlayerVideoStream {
+    pub codec: String,
+    pub height: u32,
+    pub width: u32,
+    pub index: u32,
+    pub language: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GlobalTime {
+    pub hours: u8,
+    pub milliseconds: u16,
+    pub minutes: u8,
+    pub seconds: u8,
+}
+
+// Player.Property.Value
+#[derive(Debug, Deserialize)]
+pub struct PlayerPropertyValue {
+    // TODO
+    // "audiostreams": {
+    //   "items": {
+    //     "$ref": "Player.Audio.Stream"
+    //   },
+    //   "type": "array"
+    // },
+    // "currentaudiostream": {
+    //   "$ref": "Player.Audio.Stream"
+    // },
+    // "currentsubtitle": {
+    //   "$ref": "Player.Subtitle"
+    // },
+    // "subtitles": {
+    //   "items": {
+    //     "$ref": "Player.Subtitle"
+    //   },
+    //   "type": "array"
+    // },
+    // "repeat": {
+    //   "$ref": "Player.Repeat",
+    //   "default": "off"
+    // },
+    #[serde(default, rename = "canchangespeed")]
+    pub can_change_speed: bool,
+    #[serde(default, rename = "canmove")]
+    pub can_move: bool,
+    #[serde(default, rename = "canrepeat")]
+    pub can_repeat: bool,
+    #[serde(default, rename = "canrotate")]
+    pub can_rotate: bool,
+    #[serde(default, rename = "canseek")]
+    pub can_seek: bool,
+    #[serde(default, rename = "canshuffle")]
+    pub can_shuffle: bool,
+    #[serde(default, rename = "canzoom")]
+    pub can_zoom: bool,
+    #[serde(default, rename = "currentvideostream")]
+    pub current_video_stream: Option<PlayerVideoStream>,
+    #[serde(default, rename = "live")]
+    pub live: bool,
+    #[serde(default, rename = "partymode")]
+    pub partymode: bool,
+    #[serde(default, rename = "percentage")]
+    pub percentage: f64,
+    #[serde(default = "default_playlist_id", rename = "playlistid")]
+    pub playlist_id: PlaylistId,
+    #[serde(default = "default_playlist_position", rename = "position")]
+    pub playlist_position: PlaylistPosition,
+    #[serde(default, rename = "shuffled")]
+    pub shuffled: bool,
+    #[serde(default, rename = "speed")]
+    pub speed: i32,
+    #[serde(default, rename = "subtitleenabled")]
+    pub subtitleenabled: bool,
+    #[serde(default, rename = "time")]
+    pub time: Option<GlobalTime>,
+    #[serde(default, rename = "totaltime")]
+    pub total_time: Option<GlobalTime>,
+    #[serde(default, rename = "type")]
+    pub type_: PlayerType,
+    #[serde(default, rename = "videostreams")]
+    pub video_streams: Vec<PlayerVideoStream>,
+}
+
+fn value_to_params(value: serde_json::Value) -> Option<Params> {
+    match value {
+        serde_json::Value::Object(map) => Some(Params::Map(map)),
+        serde_json::Value::Array(array) => Some(Params::Array(array)),
+        _ => None,
+    }
+}
+
+pub async fn ws_jsonrpc_player_open(
     session: &mut WsJsonRPCSession,
-    file: &str,
+    item: PlayerOpenParamsItem,
 ) -> Result<(), error::Error> {
     let response = session
         .client
         .request(
             "Player.Open",
-            Some(Params::Map(
-                vec![(
-                    String::from("item"),
-                    serde_json::Value::Object(
-                        vec![(
-                            String::from("file"),
-                            serde_json::Value::String(String::from(file)),
-                        )]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )]
-                .into_iter()
-                .collect(),
-            )),
+            Some(
+                value_to_params(serde_json::to_value(PlayerOpenParams { item }).unwrap())
+                    .expect("Serde_json output doesn't conform params"),
+            ),
+        )
+        .await?;
+    match response {
+        Output::Success(_) => Ok(()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
+    }
+}
+
+pub async fn ws_jsonrpc_player_get_properties(
+    session: &mut WsJsonRPCSession,
+    player_id: PlayerId,
+    properties: Vec<PlayerPropertyName>,
+) -> Result<PlayerPropertyValue, error::Error> {
+    let response = session
+        .client
+        .request(
+            "Player.GetProperties",
+            Some(
+                value_to_params(
+                    serde_json::to_value(PlayerGetPropertiesParams {
+                        player_id,
+                        properties,
+                    })
+                    .unwrap(),
+                )
+                .expect("Serde_json output doesn't conform params"),
+            ),
+        )
+        .await?;
+    match response {
+        Output::Success(value) => {
+            eprintln!("raw properties: {:?}", value.result);
+            Ok(serde_json::from_value(value.result)?)
+        }
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
+    }
+}
+
+pub async fn ws_jsonrpc_playlist_add(
+    session: &mut WsJsonRPCSession,
+    playlist_id: PlaylistId,
+    files: Vec<String>,
+) -> Result<(), error::Error> {
+    let response = session
+        .client
+        .request(
+            "Playlist.Add",
+            Some(
+                value_to_params(
+                    serde_json::to_value(PlaylistAddParams {
+                        playlist_id,
+                        items: files
+                            .into_iter()
+                            .map(|file| PlaylistItem::File { file })
+                            .collect(),
+                    })
+                    .unwrap(),
+                )
+                .expect("Serde_json output doesn't conform params"),
+            ),
+        )
+        .await?;
+    match response {
+        Output::Success(_) => Ok(()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
+    }
+}
+
+pub async fn ws_jsonrpc_playlist_clear(
+    session: &mut WsJsonRPCSession,
+    playlist_id: PlaylistId,
+) -> Result<(), error::Error> {
+    let response = session
+        .client
+        .request(
+            "Playlist.Clear",
+            Some(
+                value_to_params(serde_json::to_value(PlaylistClearParams { playlist_id }).unwrap())
+                    .expect("Serde_json output doesn't conform params"),
+            ),
+        )
+        .await?;
+    match response {
+        Output::Success(_) => Ok(()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
+    }
+}
+
+// GUI.ActivateWindow
+#[derive(Debug, Serialize)]
+pub struct GUIActivateWindowParams {
+    pub window: GUIWindow,
+    pub parameters: Vec<String>, // must have at least one value
+}
+
+pub async fn ws_jsonrpc_gui_activate_window(
+    session: &mut WsJsonRPCSession,
+    window: GUIWindow,
+    parameters: Vec<String>,
+) -> Result<(), error::Error> {
+    let response = session
+        .client
+        .request(
+            "GUI.ActivateWindow",
+            Some(
+                value_to_params(
+                    serde_json::to_value(GUIActivateWindowParams { window, parameters }).unwrap(),
+                )
+                .expect("Serde_json output doesn't conform params"),
+            ),
         )
         .await?;
     match response {

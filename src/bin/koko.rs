@@ -1,5 +1,6 @@
 use kodi_kontrol::{server, version::get_version};
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use trust_dns_resolver::AsyncResolver;
@@ -48,21 +49,55 @@ async fn main() -> std::io::Result<()> {
         Some(host) => resolver.lookup_ip(host).await?.iter().next().unwrap(),
         None => "127.0.0.1".parse().unwrap(),
     };
-    let source = args.value_of("SOURCE").unwrap();
 
-    let path: PathBuf = source
-        .to_string()
-        .parse()
-        .expect("Failed to parse filename");
-    let file_base = path
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .expect("TODO: filename is required to be valid UTF8")
-        .to_string();
+    let mut files = HashMap::new();
+    let mut urls_order = HashMap::new();
+    let mut file_counts = HashMap::new();
+
+    let mut order_index = 0usize;
+
+    for source in args.values_of("SOURCE").unwrap() {
+        let path: PathBuf = source
+            .to_string()
+            .parse()
+            .expect("Failed to parse filename");
+        let url_name = path
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .expect("TODO: filename is required to be valid UTF8")
+            .to_string();
+
+        let mut count = if file_counts.contains_key(&url_name) {
+            let count = file_counts.get(&url_name).unwrap() + 1;
+            file_counts.insert(url_name.clone(), count);
+            count
+        } else {
+            let count = 1;
+            file_counts.insert(url_name.clone(), count);
+            count
+        };
+
+        fn name(base: &str, count: u32) -> String {
+            if count == 1 {
+                base.to_string()
+            } else {
+                format!("{} #{}", base, count)
+            }
+        }
+
+        // maybe this algorithm gives wild names in some corner cases..
+        while files.contains_key(&name(&url_name, count)) {
+            count += 1;
+        }
+        files.insert(name(&url_name, count), String::from(source));
+        urls_order.insert(name(&url_name, count), order_index);
+        order_index += 1;
+    }
 
     let app_data = server::make_app_data_holder(server::AppData {
-        files: vec![(file_base, source.to_string())].into_iter().collect(),
+        files,
+        urls_order,
         kodi_address,
     });
     match server::doit(app_data).await {

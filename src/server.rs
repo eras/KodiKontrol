@@ -49,6 +49,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
 pub struct AppData {
     pub kodi_address: std::net::IpAddr,
     pub files: HashMap<String, String>,
+    pub urls_order: HashMap<String, usize>,
 }
 
 pub fn make_app_data_holder(app_data: AppData) -> AppDataHolder {
@@ -78,6 +79,51 @@ async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
         eprintln!("Got ctrl-c");
         exit_signal.try_send(()).expect("Failed to send ctrl c");
     }
+}
+
+fn url_for_file(addr: std::net::SocketAddr, file: &str) -> Result<Url, error::Error> {
+    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+    const FRAGMENT: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'<')
+        .add(b'>')
+        .add(b'`')
+        .add(b'%')
+        .add(b'#');
+
+    let filename_escaped = utf8_percent_encode(file, FRAGMENT).to_string();
+
+    Ok(Url::parse(format!("http://{}/file/", addr).as_str())?.join(&filename_escaped)?)
+}
+
+pub fn far_future() -> tokio::time::Instant {
+    // copied from tokio :D
+    tokio::time::Instant::now() + tokio::time::Duration::from_secs(86400 * 365 * 30)
+}
+
+async fn finish(
+    jsonrpc_session: &mut kodi_rpc::WsJsonRPCSession,
+    player_id: kodi_rpc::PlayerId,
+    playlist_id: kodi_rpc::PlaylistId,
+    use_playlist: bool,
+) -> Result<(), error::Error> {
+    kodi_rpc::ws_jsonrpc_player_stop(jsonrpc_session, player_id)
+        .await
+        .expect("TODO failed to stop playersies");
+    if use_playlist {
+        kodi_rpc::ws_jsonrpc_playlist_clear(jsonrpc_session, playlist_id)
+            .await
+            .expect("TODO failed to clear playlist");
+    }
+    kodi_rpc::ws_jsonrpc_gui_activate_window(
+        jsonrpc_session,
+        kodi_rpc::GUIWindow::Home,
+        vec![String::from("required parameter")],
+    )
+    .await
+    .expect("TODO failed to go Home");
+    Ok(())
 }
 
 pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
@@ -122,14 +168,8 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
 
     // let server = make_server((result.local_addr.ip(), 0), filename);
 
-    let filename = app_data
-        .lock()
-        .unwrap()
-        .files
-        .keys()
-        .next() // just pick the first one for now
-        .unwrap()
-        .clone();
+    let files = app_data.lock().unwrap().files.clone();
+    let urls_order = app_data.lock().unwrap().urls_order.clone();
 
     let server = HttpServer::new(move || {
         let app_data = app_data.clone();
@@ -137,90 +177,193 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
     })
     .bind((result.local_addr.ip(), 0))?;
 
-    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-    const FRAGMENT: &AsciiSet = &CONTROLS
-        .add(b' ')
-        .add(b'"')
-        .add(b'<')
-        .add(b'>')
-        .add(b'`')
-        .add(b'%')
-        .add(b'#');
-
-    let filename_escaped = utf8_percent_encode(&filename, FRAGMENT).to_string();
-
-    let url = Url::parse(format!("http://{}/file/", server.addrs()[0]).as_str())
-        .unwrap()
-        .join(&filename_escaped)
-        .unwrap();
+    let mut ordered_urls: Vec<(usize, Url)> = files
+        .iter()
+        .map(|(url, _file)| {
+            (
+                urls_order.get(url).unwrap().clone(),
+                url_for_file(server.addrs()[0], url).expect("Failed to create URL for file"),
+            )
+        })
+        .collect();
+    ordered_urls.sort();
+    let urls: Vec<Url> = ordered_urls.into_iter().map(|(_k, v)| v).collect();
 
     let (stop_server_tx, stop_server_rx) = tokio::sync::oneshot::channel();
 
     let (sigint_tx, mut sigint_rx) = mpsc::channel(1);
     tokio::spawn(handle_ctrl_c(sigint_tx));
 
-    tokio::task::spawn(async move {
+    let rpc_handler: tokio::task::JoinHandle<()> = tokio::task::spawn(async move {
         handle_errors(async move {
             let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
 
-            eprintln!("Playing: {}", &url);
-            let player =
-                kodi_rpc::ws_jsonrpc_player_open_file(&mut jsonrpc_session, url.as_str()).await?;
-            eprintln!("Playing result: {:?}", player);
+            use kodi_rpc::*;
 
-            let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(10000);
+            let playlist_id = 1;
+            eprintln!("Playing: {:?}", &urls);
+            assert!(urls.len() > 0);
+            let use_playlist = urls.len() > 1;
+            if !use_playlist {
+                let url = &urls[0];
+                let item = PlayerOpenParamsItem::PlaylistItem(PlaylistItem::File {
+                    file: url.to_string(),
+                });
+                let player = kodi_rpc::ws_jsonrpc_player_open(&mut jsonrpc_session, item).await?;
+                eprintln!("Playing result: {:?}", player);
+            } else {
+                // let items = kodi_rpc::ws_jsonrpc_playlist_get_items(&mut jsonrpc_session, playlist_id).await?;
+                // eprintln!("Existing playlist: {:?}", items);
+                kodi_rpc::ws_jsonrpc_playlist_clear(&mut jsonrpc_session, playlist_id).await?;
+                let player = kodi_rpc::ws_jsonrpc_playlist_add(
+                    &mut jsonrpc_session,
+                    playlist_id,
+                    urls.iter().map(|url| url.to_string()).collect(),
+                )
+                .await?;
+                eprintln!("Enqueued result: {:?}", player);
 
-	    let mut player_id = 0u32;
-
-            while let Some(notification) =
-                match tokio::time::timeout_at(deadline, stream.next()).await {
-                    Ok(x) => x,
-                    _ => None,
-                }
-            {
-                eprintln!("Got notification: {:?}", notification);
-		use kodi_rpc::*;
-		match notification {
-		    Notification::PlayerOnPlay(data) => {
-			eprintln!("Cool, proceed");
-			player_id = data.data.player.player_id;
-			break;
-		    },
-		    other => {
-			eprintln!("Some other notification? {:?}", other);
-		    }
-		}
+                let item = PlayerOpenParamsItem::PlaylistPos {
+                    playlist_id,
+                    position: 0,
+                };
+                let player = kodi_rpc::ws_jsonrpc_player_open(&mut jsonrpc_session, item).await?;
+                eprintln!("Playing result: {:?}", player);
             }
 
-            let active_players =
-                kodi_rpc::ws_jsonrpc_get_active_players(&mut jsonrpc_session).await?;
-            eprintln!("active_players: {:?}", active_players);
+            kodi_rpc::ws_jsonrpc_gui_activate_window(
+                &mut jsonrpc_session,
+                GUIWindow::FullscreenVideo,
+                vec![String::from("required parameter")],
+            )
+            .await?;
 
-	    loop {
-		tokio::select!{
-		    notification = stream.next() => {
-			use kodi_rpc::*;
-			match notification {
-			    None | Some(Notification::PlayerOnStop(_)) => {
-				eprintln!("End of playback, trying to stop..");
-				stop_server_tx.send(()).expect("Failed to send to stop_server channel");
-				break;
-			    },
-			    Some(other) => {
-				eprintln!("Some other notification? {:?}", other);
-			    }
-			}
-		    },
-		    _int = sigint_rx.next() => {
-			_int.expect("Failed to receive sigint");
-			eprintln!("Ctrl-c, trying to stop..");
-			kodi_rpc::ws_jsonrpc_player_stop(&mut jsonrpc_session, player_id).await.expect("TODO failed to stop playersies");
-			stop_server_tx.send(()).expect("Failed to send to stop_server channel");
-			break;
-		    }
-		}
-	    }
-	    Ok(())
+            let mut player_id = 0u32;
+
+            let mut playlist_position = 0;
+
+            enum State {
+                WaitingStart,
+                WaitingTimeout,
+                WaitingLast,
+            }
+
+            #[derive(Debug)]
+            enum Event {
+                Notification(Notification),
+                SigInt,
+                Deadline,
+            }
+
+            let mut state = State::WaitingStart;
+
+            let mut deadline = None;
+
+            while let Some(notification) = tokio::select! {
+                        notification = stream.next() => {
+                    match notification {
+                    Some(ev) => Some(Event::Notification(ev)),
+                    None => None,
+                            }
+                        }
+                        _int = sigint_rx.next() => Some(Event::SigInt),
+            _delay = tokio::time::sleep_until(match deadline {
+                        None => far_future(),
+                Some(deadline) => deadline
+            }) => {
+                    Some(Event::Deadline)
+                }
+                    }
+            {
+                eprintln!("Got notification: {:?}", notification);
+                use kodi_rpc::*;
+
+                match notification {
+                    Event::Notification(Notification::PlayerOnAVStart(data)) => {
+                        eprintln!("Cool, proceed");
+                        match state {
+                            State::WaitingStart => {
+                                player_id = data.data.player.player_id;
+                            }
+                            _ => (),
+                        }
+
+                        let props = kodi_rpc::ws_jsonrpc_player_get_properties(
+                            &mut jsonrpc_session,
+                            player_id,
+                            vec![
+                                PlayerPropertyName::CurrentVideoStream,
+                                PlayerPropertyName::Position,
+                            ],
+                        )
+                        .await?;
+                        eprintln!("Player properties: {:?}", props);
+                        playlist_position = props.playlist_position;
+
+                        state = State::WaitingLast;
+                    }
+                    Event::Notification(Notification::PlayerOnStop(_stop)) => {
+                        let end = {
+                            let props = kodi_rpc::ws_jsonrpc_player_get_properties(
+                                &mut jsonrpc_session,
+                                player_id,
+                                vec![
+                                    PlayerPropertyName::CurrentVideoStream,
+                                    PlayerPropertyName::Position,
+                                ],
+                            )
+                            .await?;
+                            match &props.current_video_stream {
+                                Some(PlayerVideoStream { codec, .. }) if codec.is_empty() => true,
+                                None => true,
+                                Some(_) => false,
+                            }
+                        };
+                        if end {
+                            eprintln!("End of playback, trying to stop..");
+                            finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist)
+                                .await?;
+                            break; // exit the loop
+                        } else {
+                            // another trick! we expect the new media to start playing in a short while.
+                            deadline = Some(
+                                tokio::time::Instant::now()
+                                    + std::time::Duration::from_millis(5000),
+                            );
+                            state = State::WaitingTimeout;
+                        }
+                    }
+                    Event::Notification(_) => (), // ignore
+                    Event::Deadline => {
+                        assert!(match state {
+                            State::WaitingTimeout => true,
+                            _ => false,
+                        });
+                        // so it appears we have finished playing; do the finishing steps
+                        finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
+                        break; // exit the loop
+                    }
+                    Event::SigInt => {
+                        eprintln!("Ctrl-c, trying to stop..");
+                        finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
+
+                        match stop_server_tx.send(()) {
+                            Ok(()) => (),
+                            Err(_) => {
+                                // we're _fine_ if we cannot send to this channel: the select has already terminated at that point
+                                eprintln!("rpc_handler failed to send to stop_server_tx");
+                            }
+                        }
+                        break; // exit the loop
+                    }
+                }
+            }
+
+            // let active_players =
+            //     kodi_rpc::ws_jsonrpc_get_active_players(&mut jsonrpc_session).await?;
+            // eprintln!("active_players: {:?}", active_players);
+
+            Ok(())
         })
         .await;
     });
@@ -234,6 +377,8 @@ pub async fn doit(app_data: AppDataHolder) -> Result<(), error::Error> {
         //server.system_exit();
         }
     }
+
+    rpc_handler.await.expect("Failed to join rpc_handler");
 
     println!("fin");
 
