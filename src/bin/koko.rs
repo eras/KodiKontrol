@@ -12,6 +12,9 @@ use thiserror::Error;
 pub enum Error {
     #[error(transparent)]
     ResolveError(#[from] trust_dns_resolver::error::ResolveError),
+
+    #[error(transparent)]
+    SetupError(#[from] SetupError),
 }
 
 async fn resolve_address(args: &ArgMatches) -> Result<std::net::IpAddr, Error> {
@@ -25,9 +28,44 @@ async fn resolve_address(args: &ArgMatches) -> Result<std::net::IpAddr, Error> {
     Ok(kodi_address)
 }
 
+#[derive(Error, Debug)]
+pub enum SetupError {
+    #[error(transparent)]
+    InitLoggingError(#[from] log4rs::config::InitError),
+
+    #[error(transparent)]
+    LogFileOpenError(#[from] std::io::Error),
+}
+
+fn init_logging(enable: bool) -> Result<(), SetupError> {
+    if !enable {
+        return Ok(());
+    }
+    use log::LevelFilter;
+    use log4rs::append::file::FileAppender;
+    use log4rs::config::{Appender, Config, Root};
+    use log4rs::encode::pattern::PatternEncoder;
+
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{d} {l} {M} {m}\n")))
+        .build("koko.log")?;
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(
+            Root::builder()
+                .appender("logfile")
+                .build(LevelFilter::Debug),
+        )
+        .map_err(|x| log4rs::config::InitError::BuildConfig(x))?;
+
+    log4rs::init_config(config).map_err(|x| log4rs::config::InitError::SetLogger(x))?;
+
+    Ok(())
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init();
     let exit = exit::Exit::new();
 
     let args = clap::App::new("koko")
@@ -62,7 +100,21 @@ async fn main() -> std::io::Result<()> {
                 .takes_value(true)
                 .about("Password for the user"),
         )
+        .arg(
+            clap::Arg::new("debug")
+                .long("debug")
+                .short('d')
+                .about("Write debug information"),
+        )
         .get_matches();
+
+    match init_logging(args.is_present("debug")) {
+        Ok(()) => (),
+        Err(err) => {
+            eprintln!("error: {:?}", err);
+            return Ok(());
+        }
+    }
 
     let kodi_address = {
         match resolve_address(&args).await {
