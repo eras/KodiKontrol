@@ -1,11 +1,114 @@
+use async_trait::async_trait;
+
 use crate::{error, exit, kodi_rpc, util::*};
 
 use url::Url;
 
 use futures::{channel::mpsc, StreamExt};
 
+pub struct ControlContext {
+    jsonrpc_session: kodi_rpc::WsJsonRPCSession,
+    player_id: kodi_rpc::PlayerId,
+    playlist_id: kodi_rpc::PlaylistId,
+}
+
+#[async_trait]
+trait ControlRequest<R>: std::fmt::Debug {
+    async fn request(&mut self, context: ControlContext) -> (ControlContext, R);
+}
+
+#[async_trait]
+pub trait ControlRequestWrapper: Send + std::fmt::Debug {
+    async fn request_wrapper(&mut self, context: ControlContext) -> ControlContext;
+}
+
+pub type KodiControlReceiver = mpsc::Receiver<Box<dyn ControlRequestWrapper + Send>>;
+
+pub struct KodiControl {
+    channel: mpsc::Sender<Box<dyn ControlRequestWrapper + Send>>,
+}
+
+impl std::fmt::Debug for KodiControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KodiControl")
+            // .field("x", &self.x)
+            // .field("y", &self.y)
+            .finish()
+    }
+}
+
 #[derive(Debug)]
-pub struct KodiControl {}
+struct KodiControlCallback<R> {
+    control_request: Box<dyn ControlRequest<R> + Send>,
+    result_tx: crossbeam_channel::Sender<R>,
+}
+
+#[async_trait]
+impl<R> ControlRequestWrapper for KodiControlCallback<R>
+where
+    R: 'static + Send + std::fmt::Debug,
+{
+    async fn request_wrapper(&mut self, context: ControlContext) -> ControlContext {
+        let (context, retval) = self.control_request.request(context).await;
+        self.result_tx.send(retval).unwrap();
+        context
+    }
+}
+
+#[derive(Debug)]
+struct PlayPauseRequest {}
+
+#[async_trait]
+impl ControlRequest<()> for PlayPauseRequest {
+    async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
+        kodi_rpc::ws_jsonrpc_player_play_pause(
+            &mut context.jsonrpc_session,
+            context.player_id.clone(),
+            kodi_rpc::GlobalToggle::Toggle,
+        )
+        .await
+        .expect("TODO failed to stop playersies");
+        (context, ())
+    }
+}
+
+impl KodiControl {
+    pub fn backwards(&mut self, _delta: std::time::Duration) {}
+    pub fn forward(&mut self, _delta: std::time::Duration) {}
+    pub fn playlist_next(&mut self) {}
+    pub fn playlist_prev(&mut self) {}
+    pub fn play_pause(&mut self) {
+        self.sync_request(Box::new(PlayPauseRequest {}))
+            .expect("Failed to call self")
+    }
+    pub fn subscribe(&mut self) -> crossbeam_channel::Receiver<()> {
+        unreachable!("not implemented");
+    }
+
+    fn sync_request<R: 'static + Send + std::fmt::Debug>(
+        &mut self,
+        control_request: Box<dyn ControlRequest<R> + Send>,
+    ) -> Option<R> {
+        let (result_tx, result_rx) = crossbeam_channel::bounded(1);
+        let request_wrapper = Box::new(KodiControlCallback {
+            control_request,
+            result_tx,
+        });
+        match self.channel.try_send(request_wrapper) {
+            Ok(()) => Some(result_rx.recv().unwrap()),
+            Err(_) => None,
+        }
+    }
+
+    pub fn new() -> (
+        KodiControl,
+        mpsc::Receiver<Box<dyn ControlRequestWrapper + Send>>,
+    ) {
+        let (tx, rx) = mpsc::channel(64);
+        let kodi_control = KodiControl { channel: tx };
+        (kodi_control, rx)
+    }
+}
 
 async fn finish(
     jsonrpc_session: &mut kodi_rpc::WsJsonRPCSession,
@@ -38,6 +141,7 @@ pub async fn rpc_handler(
     stop_server_tx: tokio::sync::oneshot::Sender<()>,
     rpc_handler_done_tx: tokio::sync::oneshot::Sender<Result<(), error::Error>>,
     mut exit: exit::Exit,
+    mut control_channel: KodiControlReceiver,
 ) {
     let result = get_errors(async move {
         let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
@@ -98,29 +202,33 @@ pub async fn rpc_handler(
             SigInt,
             Deadline,
             Exit,
+            Control(Box<dyn ControlRequestWrapper + Send>),
         }
 
         let mut state = State::WaitingStart;
 
         while let Some(notification) = tokio::select! {
-                        notification = stream.next() => {
+        // cool indentation provided by rustfmt
+            notification = stream.next() => {
                 match notification {
                     Some(ev) => Some(Event::Notification(ev)),
                     None => None,
-                            }
-                        }
-                        _int = sigint_rx.next() => Some(Event::SigInt),
+                }
+            }
+            _int = sigint_rx.next() => Some(Event::SigInt),
             _delay = tokio::time::sleep_until(match state {
                 State::WaitingTimeout(deadline) => deadline,
                 _ => far_future(),
             }) => {
                 Some(Event::Deadline)
             }
-        _exit = exit.wait() => {
-            Some(Event::Exit)
+            _exit = exit.wait() => {
+        Some(Event::Exit)
+            }
+            control_request = control_channel.next() => {
+        Some(Event::Control(control_request.expect("Did not receive a control messaage")))
         }
-                    }
-        {
+        } {
             log::debug!("Got notification: {:?}", notification);
             use kodi_rpc::*;
 
@@ -195,6 +303,15 @@ pub async fn rpc_handler(
                         }
                     }
                     break; // exit the loop
+                }
+                Event::Control(mut control_request) => {
+                    let context = ControlContext {
+                        jsonrpc_session,
+                        player_id,
+                        playlist_id,
+                    };
+                    let context = control_request.request_wrapper(context).await;
+                    jsonrpc_session = context.jsonrpc_session;
                 }
             }
         }

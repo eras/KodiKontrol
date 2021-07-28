@@ -11,7 +11,7 @@ use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 
 use std::collections::HashMap;
 
-use futures::{channel::mpsc, StreamExt};
+use futures::channel::mpsc;
 
 pub async fn info_page(_req: HttpRequest) -> impl Responder {
     format!("koko v{}", get_version())
@@ -105,6 +105,7 @@ impl Session {
         app_data: AppDataHolder,
         result: tokio::sync::oneshot::Sender<Session>,
         exit: exit::Exit,
+        kodi_control_rx: kodi_control::KodiControlReceiver,
     ) -> Result<(), error::Error> {
         let url = Url::parse(
             format!(
@@ -172,6 +173,7 @@ impl Session {
                     stop_server_tx,
                     rpc_handler_done_tx,
                     exit.clone(),
+                    kodi_control_rx,
                 ));
 
                 let session = Session {

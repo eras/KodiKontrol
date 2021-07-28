@@ -869,6 +869,57 @@ pub async fn ws_jsonrpc_player_open(
     }
 }
 
+// Global.Toggle
+#[derive(Debug)]
+pub enum GlobalToggle {
+    False,
+    True,
+    Toggle,
+}
+
+impl serde::Serialize for GlobalToggle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match *self {
+            GlobalToggle::False => serializer.serialize_bool(false),
+            GlobalToggle::True => serializer.serialize_bool(true),
+            GlobalToggle::Toggle => serializer.serialize_str("toggle"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlayerPlayPauseParams {
+    #[serde(rename = "playerid")]
+    pub player_id: PlayerId,
+    pub play: GlobalToggle,
+}
+
+pub async fn ws_jsonrpc_player_play_pause(
+    session: &mut WsJsonRPCSession,
+    player_id: PlayerId,
+    play: GlobalToggle,
+) -> Result<(), error::Error> {
+    let response = session
+        .client
+        .request(
+            "Player.PlayPause",
+            Some(
+                value_to_params(
+                    serde_json::to_value(PlayerPlayPauseParams { player_id, play }).unwrap(),
+                )
+                .expect("Serde_json output doesn't conform params"),
+            ),
+        )
+        .await?;
+    match response {
+        Output::Success(_) => Ok(()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
+    }
+}
+
 pub async fn ws_jsonrpc_player_get_properties(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
