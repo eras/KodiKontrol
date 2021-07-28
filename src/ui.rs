@@ -52,10 +52,13 @@ struct KodiInfoCallback {
 }
 
 impl kodi_control::KodiInfoCallback for KodiInfoCallback {
-    fn playlist_position(&mut self, position: kodi_rpc::PlaylistPosition) {
+    fn playlist_position(&mut self, position: Option<kodi_rpc::PlaylistPosition>) {
         match self.cb_sink.send(Box::new(move |siv| {
             siv.call_on_name("kodi_playlist_position", |view: &mut TextView| {
-                view.set_content(format!("Position: {}", position + 1));
+                view.set_content(match position {
+                    Some(position) => format!("Position: {}", position + 1),
+                    None => String::from(""),
+                });
             });
         })) {
             Ok(()) => (),

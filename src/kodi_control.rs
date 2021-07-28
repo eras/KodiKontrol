@@ -121,14 +121,14 @@ impl ControlRequest<()> for PrevRequest {
 }
 
 pub trait KodiInfoCallback: Send + std::fmt::Debug {
-    fn playlist_position(&mut self, position: kodi_rpc::PlaylistPosition);
+    fn playlist_position(&mut self, position: Option<kodi_rpc::PlaylistPosition>);
 }
 
 #[derive(Debug)]
 struct DefaultKodiInfoCallback {}
 
 impl KodiInfoCallback for DefaultKodiInfoCallback {
-    fn playlist_position(&mut self, _position: kodi_rpc::PlaylistPosition) {}
+    fn playlist_position(&mut self, _position: Option<kodi_rpc::PlaylistPosition>) {}
 }
 
 #[derive(Debug)]
@@ -277,7 +277,7 @@ pub async fn rpc_handler(
 
         let mut player_id = 0u32;
 
-        let mut playlist_position = 0;
+        let mut playlist_position = None;
         kodi_info_callback.playlist_position(playlist_position);
 
         enum State {
@@ -342,7 +342,9 @@ pub async fn rpc_handler(
                     )
                     .await?;
                     log::debug!("Player properties: {:?}", props);
-                    playlist_position = props.playlist_position;
+                    if use_playlist {
+                        playlist_position = Some(props.playlist_position);
+                    }
                     kodi_info_callback.playlist_position(playlist_position);
 
                     state = State::WaitingLast;
