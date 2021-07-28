@@ -93,7 +93,8 @@ async fn main() -> std::io::Result<()> {
             .to_string();
 
         let mut count = if file_counts.contains_key(&url_name) {
-            let count = file_counts.get(&url_name).unwrap() + 1;
+            let count: &u32 = file_counts.get(&url_name).unwrap();
+            let count = count + 1;
             file_counts.insert(url_name.clone(), count);
             count
         } else {
