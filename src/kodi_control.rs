@@ -67,7 +67,41 @@ impl ControlRequest<()> for PlayPauseRequest {
             kodi_rpc::GlobalToggle::Toggle,
         )
         .await
-        .expect("TODO failed to stop playersies");
+        .expect("TODO failed to play/pause player");
+        (context, ())
+    }
+}
+
+#[derive(Debug)]
+struct NextRequest {}
+
+#[async_trait]
+impl ControlRequest<()> for NextRequest {
+    async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
+        kodi_rpc::ws_jsonrpc_player_goto(
+            &mut context.jsonrpc_session,
+            context.player_id.clone(),
+            kodi_rpc::GoTo::Next,
+        )
+        .await
+        .expect("TODO failed to go to next track");
+        (context, ())
+    }
+}
+
+#[derive(Debug)]
+struct PrevRequest {}
+
+#[async_trait]
+impl ControlRequest<()> for PrevRequest {
+    async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
+        kodi_rpc::ws_jsonrpc_player_goto(
+            &mut context.jsonrpc_session,
+            context.player_id.clone(),
+            kodi_rpc::GoTo::Previous,
+        )
+        .await
+        .expect("TODO failed to go to next track");
         (context, ())
     }
 }
@@ -75,8 +109,14 @@ impl ControlRequest<()> for PlayPauseRequest {
 impl KodiControl {
     pub fn backwards(&mut self, _delta: std::time::Duration) {}
     pub fn forward(&mut self, _delta: std::time::Duration) {}
-    pub fn playlist_next(&mut self) {}
-    pub fn playlist_prev(&mut self) {}
+    pub fn playlist_next(&mut self) {
+        self.sync_request(Box::new(NextRequest {}))
+            .expect("Failed to call self")
+    }
+    pub fn playlist_prev(&mut self) {
+        self.sync_request(Box::new(PrevRequest {}))
+            .expect("Failed to call self")
+    }
     pub fn play_pause(&mut self) {
         self.sync_request(Box::new(PlayPauseRequest {}))
             .expect("Failed to call self")
@@ -226,8 +266,8 @@ pub async fn rpc_handler(
         Some(Event::Exit)
             }
             control_request = control_channel.next() => {
-        Some(Event::Control(control_request.expect("Did not receive a control messaage")))
-        }
+        control_request.map(|x| Event::Control(x))
+            }
         } {
             log::debug!("Got notification: {:?}", notification);
             use kodi_rpc::*;
@@ -275,7 +315,6 @@ pub async fn rpc_handler(
                     };
                     if end {
                         log::debug!("End of playback, trying to stop..");
-                        finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
                         break; // exit the loop
                     } else {
                         // another trick! we expect the new media to start playing in a short while.
@@ -287,12 +326,10 @@ pub async fn rpc_handler(
                 Event::Notification(_) => (), // ignore
                 Event::Deadline => {
                     // so it appears we have finished playing; do the finishing steps
-                    finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
                     break; // exit the loop
                 }
                 Event::SigInt | Event::Exit => {
                     log::info!("Ctrl-c or exit, trying to stop..");
-                    finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
 
                     exit.signal();
                     match stop_server_tx.send(()) {
@@ -315,6 +352,7 @@ pub async fn rpc_handler(
                 }
             }
         }
+        finish(&mut jsonrpc_session, player_id, playlist_id, use_playlist).await?;
 
         Ok(())
     })

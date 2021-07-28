@@ -920,6 +920,42 @@ pub async fn ws_jsonrpc_player_play_pause(
     }
 }
 
+#[derive(Debug, Serialize)]
+pub enum GoTo {
+    #[serde(rename = "previous")]
+    Previous,
+    #[serde(rename = "next")]
+    Next,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlayerGoToParams {
+    #[serde(rename = "playerid")]
+    pub player_id: PlayerId,
+    pub to: GoTo,
+}
+
+pub async fn ws_jsonrpc_player_goto(
+    session: &mut WsJsonRPCSession,
+    player_id: PlayerId,
+    to: GoTo,
+) -> Result<(), error::Error> {
+    let response = session
+        .client
+        .request(
+            "Player.GoTo",
+            Some(
+                value_to_params(serde_json::to_value(PlayerGoToParams { player_id, to }).unwrap())
+                    .expect("Serde_json output doesn't conform params"),
+            ),
+        )
+        .await?;
+    match response {
+        Output::Success(_) => Ok(()),
+        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
+    }
+}
+
 pub async fn ws_jsonrpc_player_get_properties(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
