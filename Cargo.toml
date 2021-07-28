@@ -5,7 +5,7 @@ authors = ["Erkki Seppälä <erkki.seppala@vincit.fi>"]
 edition = "2018"
 
 [dependencies]
-crossbeam-channel = "0.3.9"
+crossbeam-channel = "0.5.1"
 toml = "0.5.8"
 serde = "1.0.126"
 serde_derive = "1.0.126"
@@ -25,6 +25,8 @@ actix-files = "0.6.0-beta.6"
 futures = "0.3.15"
 trust-dns-resolver = "0.20.3"
 percent-encoding = "2.1.0"
+cursive = "0.16.3"
+async-trait = "0.1.50"
 # [lib]
 # name = "mute_keyboard_plugin"
 # crate-type = ["dylib"]

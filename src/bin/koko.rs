@@ -1,5 +1,5 @@
 use clap::ArgMatches;
-use kodi_kontrol::{exit, server, version::get_version};
+use kodi_kontrol::{exit, kodi_control, server, ui, version::get_version};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -147,13 +147,38 @@ async fn main() -> std::io::Result<()> {
         })
     };
 
-    match server::Session::new(app_data, session_tx, exit.clone()).await {
+    let (ui_control_tx, ui_control_rx) = tokio::sync::oneshot::channel::<ui::Control>();
+    let (kodi_control, kodi_control_rx) = kodi_control::KodiControl::new();
+    let ui_join = tokio::task::spawn_blocking({
+        let exit = exit.clone();
+        move || {
+            let mut ui = ui::Ui::new(kodi_control);
+
+            ui_control_tx
+                .send(ui.control())
+                .expect("Failed to send to ui_control_tx");
+
+            ui.run();
+            exit.signal();
+
+            ui.finish();
+            eprintln!("Exiting..");
+        }
+    });
+    let ui_control = ui_control_rx
+        .await
+        .expect("Failed to receive from ui_control_rx");
+
+    match server::Session::new(app_data, session_tx, exit.clone(), kodi_control_rx).await {
         Ok(()) => (),
         Err(err) => {
             eprintln!("error: {:?}", err);
             return Ok(());
         }
     }
+    ui_control.quit();
+
+    ui_join.await.expect("Failed to join ui_join");
 
     match app_join.await.expect("Failed to join app_join") {
         Ok(()) => Ok(()),
