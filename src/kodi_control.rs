@@ -10,6 +10,7 @@ pub struct ControlContext {
     jsonrpc_session: kodi_rpc::WsJsonRPCSession,
     player_id: kodi_rpc::PlayerId,
     playlist_id: kodi_rpc::PlaylistId,
+    kodi_info_callback: Option<Box<dyn KodiInfoCallback>>,
 }
 
 #[async_trait]
@@ -38,19 +39,32 @@ impl std::fmt::Debug for KodiControl {
 }
 
 #[derive(Debug)]
-struct KodiControlCallback<R> {
+struct KodiControlCallbackSync<R> {
     control_request: Box<dyn ControlRequest<R> + Send>,
     result_tx: crossbeam_channel::Sender<R>,
 }
 
+#[derive(Debug)]
+struct KodiControlCallbackAsync {
+    control_request: Box<dyn ControlRequest<()> + Send>,
+}
+
 #[async_trait]
-impl<R> ControlRequestWrapper for KodiControlCallback<R>
+impl<R> ControlRequestWrapper for KodiControlCallbackSync<R>
 where
     R: 'static + Send + std::fmt::Debug,
 {
     async fn request_wrapper(&mut self, context: ControlContext) -> ControlContext {
         let (context, retval) = self.control_request.request(context).await;
         self.result_tx.send(retval).unwrap();
+        context
+    }
+}
+
+#[async_trait]
+impl ControlRequestWrapper for KodiControlCallbackAsync {
+    async fn request_wrapper(&mut self, context: ControlContext) -> ControlContext {
+        let (context, ()) = self.control_request.request(context).await;
         context
     }
 }
@@ -106,6 +120,30 @@ impl ControlRequest<()> for PrevRequest {
     }
 }
 
+pub trait KodiInfoCallback: Send + std::fmt::Debug {
+    fn playlist_position(&mut self, position: kodi_rpc::PlaylistPosition);
+}
+
+#[derive(Debug)]
+struct DefaultKodiInfoCallback {}
+
+impl KodiInfoCallback for DefaultKodiInfoCallback {
+    fn playlist_position(&mut self, _position: kodi_rpc::PlaylistPosition) {}
+}
+
+#[derive(Debug)]
+struct SetCallbackRequest {
+    kodi_info_callback: Option<Box<dyn KodiInfoCallback>>,
+}
+
+#[async_trait]
+impl ControlRequest<()> for SetCallbackRequest {
+    async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
+        context.kodi_info_callback = self.kodi_info_callback.take();
+        (context, ())
+    }
+}
+
 impl KodiControl {
     pub fn backwards(&mut self, _delta: std::time::Duration) {}
     pub fn forward(&mut self, _delta: std::time::Duration) {}
@@ -121,8 +159,10 @@ impl KodiControl {
         self.sync_request(Box::new(PlayPauseRequest {}))
             .expect("Failed to call self")
     }
-    pub fn subscribe(&mut self) -> crossbeam_channel::Receiver<()> {
-        unreachable!("not implemented");
+    pub fn set_callback(&mut self, kodi_info_callback: Box<dyn KodiInfoCallback>) {
+        self.async_request(Box::new(SetCallbackRequest {
+            kodi_info_callback: Some(kodi_info_callback),
+        }))
     }
 
     fn sync_request<R: 'static + Send + std::fmt::Debug>(
@@ -130,13 +170,21 @@ impl KodiControl {
         control_request: Box<dyn ControlRequest<R> + Send>,
     ) -> Option<R> {
         let (result_tx, result_rx) = crossbeam_channel::bounded(1);
-        let request_wrapper = Box::new(KodiControlCallback {
+        let request_wrapper = Box::new(KodiControlCallbackSync {
             control_request,
             result_tx,
         });
         match self.channel.try_send(request_wrapper) {
             Ok(()) => Some(result_rx.recv().unwrap()),
             Err(_) => None,
+        }
+    }
+
+    fn async_request(&mut self, control_request: Box<dyn ControlRequest<()> + Send>) {
+        let request_wrapper = Box::new(KodiControlCallbackAsync { control_request });
+        match self.channel.try_send(request_wrapper) {
+            Ok(()) => (),
+            Err(_) => (),
         }
     }
 
@@ -183,6 +231,7 @@ pub async fn rpc_handler(
     mut exit: exit::Exit,
     mut control_channel: KodiControlReceiver,
 ) {
+    let mut kodi_info_callback: Box<dyn KodiInfoCallback> = Box::new(DefaultKodiInfoCallback {});
     let result = get_errors(async move {
         let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
 
@@ -229,6 +278,7 @@ pub async fn rpc_handler(
         let mut player_id = 0u32;
 
         let mut playlist_position = 0;
+        kodi_info_callback.playlist_position(playlist_position);
 
         enum State {
             WaitingStart,
@@ -293,6 +343,7 @@ pub async fn rpc_handler(
                     .await?;
                     log::debug!("Player properties: {:?}", props);
                     playlist_position = props.playlist_position;
+                    kodi_info_callback.playlist_position(playlist_position);
 
                     state = State::WaitingLast;
                 }
@@ -346,9 +397,11 @@ pub async fn rpc_handler(
                         jsonrpc_session,
                         player_id,
                         playlist_id,
+                        kodi_info_callback: Some(kodi_info_callback),
                     };
                     let context = control_request.request_wrapper(context).await;
                     jsonrpc_session = context.jsonrpc_session;
+                    kodi_info_callback = context.kodi_info_callback.unwrap();
                 }
             }
         }

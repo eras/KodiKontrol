@@ -3,7 +3,7 @@ use cursive::view::Margins;
 use cursive::views::{Button, Dialog, DummyView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
 
-use crate::kodi_control::KodiControl;
+use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc};
 
 pub struct Ui {
     siv: Cursive,
@@ -46,21 +46,36 @@ fn playlist_next(siv: &mut Cursive) {
     siv.focus_name("next").expect("Failed to focus next");
 }
 
+#[derive(Debug)]
+struct KodiInfoCallback {
+    cb_sink: crossbeam_channel::Sender<Box<dyn FnOnce(&mut Cursive) + 'static + Send>>,
+}
+
+impl kodi_control::KodiInfoCallback for KodiInfoCallback {
+    fn playlist_position(&mut self, position: kodi_rpc::PlaylistPosition) {
+        match self.cb_sink.send(Box::new(move |siv| {
+            siv.call_on_name("kodi_playlist_position", |view: &mut TextView| {
+                view.set_content(format!("Position: {}", position + 1));
+            });
+        })) {
+            Ok(()) => (),
+            Err(_) => (), // ignore. maybe ui exited.
+        }
+    }
+}
+
 impl Ui {
-    pub fn new(kodi_control: KodiControl) -> Ui {
+    pub fn new(mut kodi_control: KodiControl) -> Ui {
         let mut siv = Cursive::default();
+        kodi_control.set_callback(Box::new(KodiInfoCallback {
+            cb_sink: siv.cb_sink().clone(),
+        }));
         let ui_data = UiData { kodi_control };
         siv.set_user_data(ui_data);
         siv.set_theme(Self::create_theme(siv.current_theme().clone()));
 
-        //siv.clear_global_callbacks(cursive::event::Event::CtrlChar('c'));
+        let info = TextView::new("Waiting..").with_name("kodi_playlist_position");
 
-        siv.add_layer(TextView::new("Hello World!\nPress q to quit."));
-
-        // let select = SelectView::<String>::new()
-        //     // .on_submit(on_submit)
-        //     .with_name("select")
-        //     .fixed_size((10, 5));
         let buttons = LinearLayout::horizontal()
             .child(Button::new_raw("   \u{23ee}   ", playlist_prev).with_name("prev"))
             .child(Button::new_raw("   \u{23ef}   ", pause_play).with_name("play_pause"))
@@ -68,8 +83,13 @@ impl Ui {
             .child(DummyView)
             .child(Button::new_raw("Quit", Cursive::quit));
 
+        let view = LinearLayout::vertical()
+            .child(info)
+            .child(DummyView)
+            .child(buttons);
+
         siv.add_layer(
-            Dialog::around(LinearLayout::horizontal().child(buttons).full_width())
+            Dialog::around(LinearLayout::horizontal().child(view).full_width())
                 .title("KoKo")
                 .padding(Margins::lrtb(3, 3, 2, 2)),
         );
