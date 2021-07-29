@@ -276,7 +276,7 @@ pub struct PlayerVideoStream {
 #[derive(Debug, Deserialize)]
 pub struct GlobalTime {
     pub hours: u8,
-    pub milliseconds: u16,
+    pub milliseconds: i16, // apparently milliseconsd can be negative..
     pub minutes: u8,
     pub seconds: u8,
 }
