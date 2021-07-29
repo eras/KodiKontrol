@@ -1,6 +1,6 @@
 use cursive::traits::*;
 use cursive::view::Margins;
-use cursive::views::{Button, Dialog, DummyView, LinearLayout, TextView};
+use cursive::views::{Button, Dialog, DummyView, LinearLayout, ProgressBar, TextView};
 use cursive::{Cursive, CursiveExt};
 
 use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc_types};
@@ -78,6 +78,7 @@ impl std::fmt::Display for kodi_rpc_types::GlobalTime {
 }
 
 fn update_time(siv: &mut Cursive, properties: kodi_rpc_types::PlayerPropertyValue) {
+    let properties2 = properties.clone();
     siv.call_on_name("kodi_time", |view: &mut TextView| {
         let time = properties
             .time
@@ -88,6 +89,9 @@ fn update_time(siv: &mut Cursive, properties: kodi_rpc_types::PlayerPropertyValu
             .map(|x| x.to_string())
             .unwrap_or(String::from("-"));
         view.set_content(format!("{} / {}", time, total_time));
+    });
+    siv.call_on_name("progress", |view: &mut ProgressBar| {
+        view.set_value(properties2.percentage as usize);
     });
 }
 
@@ -132,6 +136,11 @@ impl Ui {
         let playlist_position = TextView::new("Waiting..").with_name("kodi_playlist_position");
         let time = TextView::new("").with_name("kodi_time");
 
+        let progress = ProgressBar::new()
+            .range(0, 100)
+            .with_label(|_value: usize, _bounds: (usize, usize)| -> String { String::from("") })
+            .with_name("progress");
+
         let buttons = LinearLayout::horizontal()
             .child(Button::new_raw("   \u{23ee}   ", playlist_prev).with_name("prev"))
             .child(Button::new_raw("   \u{23ef}   ", pause_play).with_name("play_pause"))
@@ -140,10 +149,13 @@ impl Ui {
             .child(Button::new_raw("Quit", quit));
 
         let view = LinearLayout::vertical()
+            .child(progress)
+            .child(DummyView)
             .child(playlist_position)
             .child(time)
             .child(DummyView)
-            .child(buttons);
+            .child(buttons)
+            .full_width();
 
         siv.add_layer(
             Dialog::around(LinearLayout::horizontal().child(view).full_width())
