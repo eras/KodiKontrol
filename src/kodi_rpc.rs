@@ -148,7 +148,7 @@ pub struct WsJsonRPCSession {
     client: WsClient,
 }
 
-pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Error> {
+pub async fn connect(url: &Url) -> Result<WsJsonRPCSession, error::Error> {
     let client = WsClient::new(url.as_str()).await?;
     let response = client.request("JSONRPC.Ping", None).await?;
     match response {
@@ -157,23 +157,23 @@ pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Er
     }
 }
 
-pub async fn ws_jsonrpc_player_stop(
+pub async fn player_stop(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(session, "Player.Stop", Some(PlayerStopParams { player_id })).await
+    request(session, "Player.Stop", Some(PlayerStopParams { player_id })).await
 }
 
-pub async fn ws_jsonrpc_get_players(
+pub async fn get_players(
     session: &mut WsJsonRPCSession,
 ) -> Result<serde_json::Value, error::Error> {
-    ws_jsonrpc_request(session, "Player.GetPlayers", NO_PARAMS).await
+    request(session, "Player.GetPlayers", NO_PARAMS).await
 }
 
-pub async fn ws_jsonrpc_get_active_players(
+pub async fn get_active_players(
     session: &mut WsJsonRPCSession,
 ) -> Result<PlayerGetActivePlayersResponse, error::Error> {
-    ws_jsonrpc_request(session, "Player.GetActivePlayers", NO_PARAMS).await
+    request(session, "Player.GetActivePlayers", NO_PARAMS).await
 }
 
 pub struct Subscription {
@@ -200,9 +200,7 @@ impl Subscription {
     }
 }
 
-pub async fn ws_jsonrpc_subscribe(
-    session: &mut WsJsonRPCSession,
-) -> Result<Subscription, error::Error> {
+pub async fn subscribe(session: &mut WsJsonRPCSession) -> Result<Subscription, error::Error> {
     let ws_subscription = session
         .client
         .subscribe_all()
@@ -219,7 +217,7 @@ fn value_to_params(value: serde_json::Value) -> Option<Params> {
     }
 }
 
-async fn ws_jsonrpc_request<Request: serde::Serialize, Response: serde::de::DeserializeOwned>(
+async fn request<Request: serde::Serialize, Response: serde::de::DeserializeOwned>(
     session: &mut WsJsonRPCSession,
     name: &str,
     request: Option<Request>,
@@ -240,19 +238,19 @@ async fn ws_jsonrpc_request<Request: serde::Serialize, Response: serde::de::Dese
     }
 }
 
-pub async fn ws_jsonrpc_player_open(
+pub async fn player_open(
     session: &mut WsJsonRPCSession,
     item: PlayerOpenParamsItem,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(session, "Player.Open", Some(PlayerOpenParams { item })).await
+    request(session, "Player.Open", Some(PlayerOpenParams { item })).await
 }
 
-pub async fn ws_jsonrpc_player_play_pause(
+pub async fn player_play_pause(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
     play: GlobalToggle,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(
+    request(
         session,
         "Player.PlayPause",
         Some(PlayerPlayPauseParams { player_id, play }),
@@ -260,12 +258,12 @@ pub async fn ws_jsonrpc_player_play_pause(
     .await
 }
 
-pub async fn ws_jsonrpc_player_goto(
+pub async fn player_goto(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
     to: GoTo,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(
+    request(
         session,
         "Player.GoTo",
         Some(PlayerGoToParams { player_id, to }),
@@ -273,12 +271,12 @@ pub async fn ws_jsonrpc_player_goto(
     .await
 }
 
-pub async fn ws_jsonrpc_player_get_properties(
+pub async fn player_get_properties(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
     properties: Vec<PlayerPropertyName>,
 ) -> Result<PlayerPropertyValue, error::Error> {
-    ws_jsonrpc_request(
+    request(
         session,
         "Player.GetProperties",
         Some(PlayerGetPropertiesParams {
@@ -289,12 +287,12 @@ pub async fn ws_jsonrpc_player_get_properties(
     .await
 }
 
-pub async fn ws_jsonrpc_playlist_add(
+pub async fn playlist_add(
     session: &mut WsJsonRPCSession,
     playlist_id: PlaylistId,
     files: Vec<String>,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(
+    request(
         session,
         "Playlist.Add",
         Some(PlaylistAddParams {
@@ -308,11 +306,11 @@ pub async fn ws_jsonrpc_playlist_add(
     .await
 }
 
-pub async fn ws_jsonrpc_playlist_clear(
+pub async fn playlist_clear(
     session: &mut WsJsonRPCSession,
     playlist_id: PlaylistId,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(
+    request(
         session,
         "Playlist.Clear",
         Some(PlaylistClearParams { playlist_id }),
@@ -320,12 +318,12 @@ pub async fn ws_jsonrpc_playlist_clear(
     .await
 }
 
-pub async fn ws_jsonrpc_gui_activate_window(
+pub async fn gui_activate_window(
     session: &mut WsJsonRPCSession,
     window: GUIWindow,
     parameters: Vec<String>,
 ) -> Result<Discard, error::Error> {
-    ws_jsonrpc_request(
+    request(
         session,
         "GUI.ActivateWindow",
         Some(GUIActivateWindowParams { window, parameters }),
@@ -333,7 +331,7 @@ pub async fn ws_jsonrpc_gui_activate_window(
     .await
 }
 
-pub async fn ws_jsonrpc_introspect(
+pub async fn jsonrpc_introspect(
     session: &mut WsJsonRPCSession,
 ) -> Result<serde_json::Value, error::Error> {
     let response = session.client.request("JSONRPC.Introspect", None).await?;

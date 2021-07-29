@@ -75,7 +75,7 @@ struct PlayPauseRequest {}
 #[async_trait]
 impl ControlRequest<()> for PlayPauseRequest {
     async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
-        kodi_rpc::ws_jsonrpc_player_play_pause(
+        kodi_rpc::player_play_pause(
             &mut context.jsonrpc_session,
             context.player_id.clone(),
             kodi_rpc_types::GlobalToggle::Toggle,
@@ -92,7 +92,7 @@ struct NextRequest {}
 #[async_trait]
 impl ControlRequest<()> for NextRequest {
     async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
-        kodi_rpc::ws_jsonrpc_player_goto(
+        kodi_rpc::player_goto(
             &mut context.jsonrpc_session,
             context.player_id.clone(),
             kodi_rpc_types::GoTo::Next,
@@ -109,7 +109,7 @@ struct PrevRequest {}
 #[async_trait]
 impl ControlRequest<()> for PrevRequest {
     async fn request(&mut self, mut context: ControlContext) -> (ControlContext, ()) {
-        kodi_rpc::ws_jsonrpc_player_goto(
+        kodi_rpc::player_goto(
             &mut context.jsonrpc_session,
             context.player_id.clone(),
             kodi_rpc_types::GoTo::Previous,
@@ -204,15 +204,15 @@ async fn finish(
     playlist_id: kodi_rpc_types::PlaylistId,
     use_playlist: bool,
 ) -> Result<(), error::Error> {
-    kodi_rpc::ws_jsonrpc_player_stop(jsonrpc_session, player_id)
+    kodi_rpc::player_stop(jsonrpc_session, player_id)
         .await
         .expect("TODO failed to stop playersies");
     if use_playlist {
-        kodi_rpc::ws_jsonrpc_playlist_clear(jsonrpc_session, playlist_id)
+        kodi_rpc::playlist_clear(jsonrpc_session, playlist_id)
             .await
             .expect("TODO failed to clear playlist");
     }
-    kodi_rpc::ws_jsonrpc_gui_activate_window(
+    kodi_rpc::gui_activate_window(
         jsonrpc_session,
         kodi_rpc_types::GUIWindow::Home,
         vec![String::from("required parameter")],
@@ -233,7 +233,7 @@ pub async fn rpc_handler(
 ) {
     let mut kodi_info_callback: Box<dyn KodiInfoCallback> = Box::new(DefaultKodiInfoCallback {});
     let result = get_errors(async move {
-        let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
+        let mut stream = kodi_rpc::subscribe(&mut jsonrpc_session).await?;
 
         use kodi_rpc_types::*;
 
@@ -246,13 +246,13 @@ pub async fn rpc_handler(
             let item = PlayerOpenParamsItem::PlaylistItem(PlaylistItem::File {
                 file: url.to_string(),
             });
-            let player = kodi_rpc::ws_jsonrpc_player_open(&mut jsonrpc_session, item).await?;
+            let player = kodi_rpc::player_open(&mut jsonrpc_session, item).await?;
             log::debug!("Playing result: {:?}", player);
         } else {
             // let items = kodi_rpc::ws_jsonrpc_playlist_get_items(&mut jsonrpc_session, playlist_id).await?;
             // log::info!("Existing playlist: {:?}", items);
-            kodi_rpc::ws_jsonrpc_playlist_clear(&mut jsonrpc_session, playlist_id).await?;
-            let player = kodi_rpc::ws_jsonrpc_playlist_add(
+            kodi_rpc::playlist_clear(&mut jsonrpc_session, playlist_id).await?;
+            let player = kodi_rpc::playlist_add(
                 &mut jsonrpc_session,
                 playlist_id,
                 urls.iter().map(|url| url.to_string()).collect(),
@@ -264,11 +264,11 @@ pub async fn rpc_handler(
                 playlist_id,
                 position: 0,
             };
-            let player = kodi_rpc::ws_jsonrpc_player_open(&mut jsonrpc_session, item).await?;
+            let player = kodi_rpc::player_open(&mut jsonrpc_session, item).await?;
             log::debug!("Playing result: {:?}", player);
         }
 
-        kodi_rpc::ws_jsonrpc_gui_activate_window(
+        kodi_rpc::gui_activate_window(
             &mut jsonrpc_session,
             GUIWindow::FullscreenVideo,
             vec![String::from("required parameter")],
@@ -331,7 +331,7 @@ pub async fn rpc_handler(
                         _ => (),
                     }
 
-                    let props = kodi_rpc::ws_jsonrpc_player_get_properties(
+                    let props = kodi_rpc::player_get_properties(
                         &mut jsonrpc_session,
                         player_id,
                         vec![
@@ -350,7 +350,7 @@ pub async fn rpc_handler(
                 }
                 Event::Notification(Notification::PlayerOnStop(_stop)) => {
                     let end = {
-                        let props = kodi_rpc::ws_jsonrpc_player_get_properties(
+                        let props = kodi_rpc::player_get_properties(
                             &mut jsonrpc_session,
                             player_id,
                             vec![

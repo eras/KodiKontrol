@@ -123,8 +123,7 @@ impl Session {
         )?;
         let jsonrpc_info = kodi_rpc::jsonrpc_get(&url).await?;
 
-        let mut jsonrpc_session: kodi_rpc::WsJsonRPCSession =
-            kodi_rpc::ws_jsonrpc_connect(&wsurl).await?;
+        let mut jsonrpc_session: kodi_rpc::WsJsonRPCSession = kodi_rpc::connect(&wsurl).await?;
 
         // let introspect = ws_jsonrpc_introspect(&mut self.jsonrpc_session).await?;
         // log::debug!("introspect: {}", introspect);
@@ -132,7 +131,7 @@ impl Session {
         // file.write_all(introspect.to_string().as_bytes())
         //     .expect("write failed");
 
-        let players = kodi_rpc::ws_jsonrpc_get_players(&mut jsonrpc_session).await?;
+        let players = kodi_rpc::get_players(&mut jsonrpc_session).await?;
         log::debug!("players: {}", players);
 
         // let mut file = std::fs::File::create("jsonrpc.json").expect("create failed");
