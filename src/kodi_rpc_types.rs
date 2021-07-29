@@ -5,7 +5,7 @@ pub type PlaylistId = i32; // 0..2, but default is -1
 pub type PlaylistPosition = i32; // positive but default is -1
 
 // "Playlist.Item"
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum PlaylistItem {
     File { file: String },
@@ -32,7 +32,7 @@ pub struct PlaylistGetItemsParams {
     pub playlist_id: PlaylistId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub enum ActivePlayerType {
     #[serde(rename = "internal")]
     Internal,
@@ -44,7 +44,7 @@ pub enum ActivePlayerType {
     Remote,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub enum PlayerType {
     #[serde(rename = "video")]
     Video,
@@ -62,7 +62,7 @@ impl Default for PlayerType {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PlayerGetActivePlayer {
     #[serde(rename = "type")]
     pub type_: String,
@@ -72,7 +72,7 @@ pub struct PlayerGetActivePlayer {
     pub playertype: ActivePlayerType,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum NotificationsItem {
     #[serde(rename = "unknown")]
@@ -136,7 +136,7 @@ pub enum NotificationsItem {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Player {
     #[serde(rename = "playerid")]
     pub player_id: PlayerId,
@@ -144,19 +144,19 @@ pub struct Player {
 }
 
 // Map({"data": Object({"item": Object({"title": String("file"), "type": String("movie")}), "player": Object({"playerid": Number(0), "speed": Number(1)})}), "sender": String("xbmc")})
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PlayerNotificationsData {
     pub item: NotificationsItem,
     pub player: Player,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PlayerStopNotificationsData {
     pub item: NotificationsItem,
     pub end: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct NotificationInfo<Content> {
     pub data: Content,
     pub sender: String, // "xbmc"
@@ -164,7 +164,7 @@ pub struct NotificationInfo<Content> {
 
 pub type PlayerGetActivePlayersResponse = Vec<PlayerGetActivePlayer>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "method", content = "params")]
 pub enum Notification {
     #[serde(rename = "Player.OnPlay")]
@@ -263,7 +263,7 @@ pub struct PlayerGetPropertiesParams {
     pub properties: Vec<PlayerPropertyName>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PlayerVideoStream {
     pub codec: String,
     pub height: u32,
@@ -273,7 +273,7 @@ pub struct PlayerVideoStream {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GlobalTime {
     pub hours: u8,
     pub milliseconds: i16, // apparently milliseconsd can be negative..
@@ -282,7 +282,7 @@ pub struct GlobalTime {
 }
 
 // Player.Property.Value
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PlayerPropertyValue {
     // TODO
     // "audiostreams": {
