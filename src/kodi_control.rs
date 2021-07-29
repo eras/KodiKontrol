@@ -336,7 +336,7 @@ pub async fn rpc_handler(
                         player_id,
                         vec![
                             PlayerPropertyName::CurrentVideoStream,
-                            PlayerPropertyName::Position,
+                            PlayerPropertyName::PlaylistPosition,
                         ],
                     )
                     .await?;
@@ -355,7 +355,7 @@ pub async fn rpc_handler(
                             player_id,
                             vec![
                                 PlayerPropertyName::CurrentVideoStream,
-                                PlayerPropertyName::Position,
+                                PlayerPropertyName::PlaylistPosition,
                             ],
                         )
                         .await?;

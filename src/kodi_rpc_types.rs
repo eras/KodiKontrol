@@ -219,7 +219,7 @@ pub enum PlayerPropertyName {
     #[serde(rename = "playlistid")]
     PlaylistId,
     #[serde(rename = "position")]
-    Position,
+    PlaylistPosition,
     #[serde(rename = "repeat")]
     Repeat,
     #[serde(rename = "shuffled")]
