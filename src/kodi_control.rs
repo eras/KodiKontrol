@@ -77,18 +77,25 @@ struct PropertiesRequest {
 }
 
 #[async_trait]
-impl ControlRequest<kodi_rpc_types::PlayerPropertyValue> for PropertiesRequest {
+impl ControlRequest<Option<kodi_rpc_types::PlayerPropertyValue>> for PropertiesRequest {
     async fn request(
         &mut self,
         mut context: ControlContext,
-    ) -> (ControlContext, kodi_rpc_types::PlayerPropertyValue) {
+    ) -> (ControlContext, Option<kodi_rpc_types::PlayerPropertyValue>) {
+        // well, this seems to fail sometimes, so just return None in those cases
         let value = kodi_rpc::player_get_properties(
             &mut context.jsonrpc_session,
             context.player_id,
             self.properties.clone(),
         )
-        .await
-        .expect("TODO failed to play/pause player");
+        .await;
+        let value = match value {
+            Ok(value) => Some(value),
+            Err(err) => {
+                log::error!("Failed to receive properties: {}", err);
+                None
+            }
+        };
         (context, value)
     }
 }
@@ -197,7 +204,7 @@ impl KodiControl {
     pub fn properties(
         &mut self,
         properties: Vec<kodi_rpc_types::PlayerPropertyName>,
-    ) -> Result<kodi_rpc_types::PlayerPropertyValue, Error> {
+    ) -> Result<Option<kodi_rpc_types::PlayerPropertyValue>, Error> {
         self.sync_request(Box::new(PropertiesRequest { properties }))
     }
 

@@ -197,9 +197,12 @@ impl Ui {
                             kodi_rpc_types::PlayerPropertyName::Time,
                             kodi_rpc_types::PlayerPropertyName::Speed,
                         ])?;
-                        cb_sink
-                            .send(Box::new(|s| update_time(s, info)))
-                            .map_err(|err| Error::CrossbeamSendError(err.to_string()))?;
+                        match info {
+                            Some(info) => cb_sink
+                                .send(Box::new(|s| update_time(s, info)))
+                                .map_err(|err| Error::CrossbeamSendError(err.to_string()))?,
+                            None => (), // I guess we didn't get the data this time..
+                        }
 
                         Ok(())
                     };
