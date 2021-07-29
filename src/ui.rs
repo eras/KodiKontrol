@@ -3,7 +3,7 @@ use cursive::view::Margins;
 use cursive::views::{Button, Dialog, DummyView, LinearLayout, ProgressBar, TextView};
 use cursive::{Cursive, CursiveExt};
 
-use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc_types};
+use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc_types, version};
 
 use crate::{error, exit, util};
 
@@ -159,7 +159,7 @@ impl Ui {
 
         siv.add_layer(
             Dialog::around(LinearLayout::horizontal().child(view).full_width())
-                .title("KoKo")
+                .title(format!("KodiKontrol {}", version::get_version()))
                 .padding(Margins::lrtb(3, 3, 2, 2)),
         );
 
