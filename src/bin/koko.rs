@@ -1,5 +1,5 @@
 use clap::ArgMatches;
-use kodi_kontrol::{exit, kodi_control, server, ui, version::get_version};
+use kodi_kontrol::{exit, kodi_control, server, ui, util, version::get_version};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -205,14 +205,13 @@ async fn main() -> std::io::Result<()> {
     let ui_join = tokio::task::spawn_blocking({
         let exit = exit.clone();
         move || {
-            let mut ui = ui::Ui::new(kodi_control);
+            let mut ui = util::sync_panic_error(|| Ok(ui::Ui::new(kodi_control, exit)?));
 
             ui_control_tx
                 .send(ui.control())
                 .expect("Failed to send to ui_control_tx");
 
             ui.run();
-            exit.signal();
 
             ui.finish();
             eprintln!("Exiting..");

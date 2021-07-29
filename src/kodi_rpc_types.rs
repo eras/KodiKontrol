@@ -202,7 +202,7 @@ pub struct PlayerOpenParams {
     pub item: PlayerOpenParamsItem,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub enum PlayerPropertyName {
     #[serde(rename = "type")]
     Type,

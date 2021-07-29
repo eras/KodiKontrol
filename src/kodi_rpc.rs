@@ -221,7 +221,10 @@ async fn request<Request: serde::Serialize, Response: serde::de::DeserializeOwne
     session: &mut WsJsonRPCSession,
     name: &str,
     request: Option<Request>,
-) -> Result<Response, error::Error> {
+) -> Result<Response, error::Error>
+where
+    Response: std::fmt::Debug,
+{
     let response = session
         .client
         .request(
@@ -232,8 +235,18 @@ async fn request<Request: serde::Serialize, Response: serde::de::DeserializeOwne
             }),
         )
         .await?;
+    log::debug!("RPC response: {:?}", response);
     match response {
-        Output::Success(value) => Ok(serde_json::from_value(value.clone().result)?),
+        Output::Success(value) => match serde_json::from_value(value.clone().result) {
+            Ok(result) => {
+                log::debug!("Parse OK: {:?}", result);
+                Ok(result)
+            }
+            Err(err) => {
+                log::error!("Parse failed: {:?}", err);
+                Err(err)?
+            }
+        },
         Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
 }

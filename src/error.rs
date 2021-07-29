@@ -36,6 +36,12 @@ pub enum Error {
     #[error(transparent)]
     JsonDecodeError(#[from] serde_json::Error),
 
+    #[error(transparent)]
+    KodiControlError(#[from] crate::kodi_control::Error),
+
+    #[error(transparent)]
+    UiControlError(#[from] crate::ui::Error),
+
     // This would make the Error non-Sendable which is an issue
     // #[error(transparent)]
     // OtherError(#[from] Box<dyn std::error::Error>),

@@ -1,7 +1,7 @@
 use crate::error;
 use std::future::Future;
 
-pub async fn handle_errors<F>(function: F) -> ()
+pub async fn async_handle_error<F>(function: F) -> ()
 where
     F: Future<Output = Result<(), error::Error>> + Send + 'static,
     // F: Fn() -> Result<(), error::Error>,
@@ -9,6 +9,19 @@ where
     match function.await {
         Ok(()) => (),
         Err(err) => log::error!("augh, error: {:?}", err),
+    }
+}
+
+pub fn sync_panic_error<F, T>(f: F) -> T
+where
+    F: FnOnce() -> Result<T, error::Error>,
+{
+    match f() {
+        Ok(x) => x,
+        Err(err) => {
+            log::error!("Failed: {}", err);
+            panic!("Cannot make a value");
+        }
     }
 }
 

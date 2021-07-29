@@ -4,6 +4,8 @@ use crate::{error, exit, kodi_rpc, kodi_rpc_types, util::*};
 
 use url::Url;
 
+use thiserror::Error;
+
 use futures::{channel::mpsc, StreamExt};
 
 pub struct ControlContext {
@@ -66,6 +68,28 @@ impl ControlRequestWrapper for KodiControlCallbackAsync {
     async fn request_wrapper(&mut self, context: ControlContext) -> ControlContext {
         let (context, ()) = self.control_request.request(context).await;
         context
+    }
+}
+
+#[derive(Debug)]
+struct PropertiesRequest {
+    properties: Vec<kodi_rpc_types::PlayerPropertyName>,
+}
+
+#[async_trait]
+impl ControlRequest<kodi_rpc_types::PlayerPropertyValue> for PropertiesRequest {
+    async fn request(
+        &mut self,
+        mut context: ControlContext,
+    ) -> (ControlContext, kodi_rpc_types::PlayerPropertyValue) {
+        let value = kodi_rpc::player_get_properties(
+            &mut context.jsonrpc_session,
+            context.player_id,
+            self.properties.clone(),
+        )
+        .await
+        .expect("TODO failed to play/pause player");
+        (context, value)
     }
 }
 
@@ -144,47 +168,62 @@ impl ControlRequest<()> for SetCallbackRequest {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("TrySendError in KodiControl: {}", .0)]
+    TrySendError(String),
+}
+
 impl KodiControl {
     pub fn backwards(&mut self, _delta: std::time::Duration) {}
     pub fn forward(&mut self, _delta: std::time::Duration) {}
-    pub fn playlist_next(&mut self) {
+    pub fn playlist_next(&mut self) -> Result<(), Error> {
         self.sync_request(Box::new(NextRequest {}))
-            .expect("Failed to call self")
     }
-    pub fn playlist_prev(&mut self) {
+    pub fn playlist_prev(&mut self) -> Result<(), Error> {
         self.sync_request(Box::new(PrevRequest {}))
-            .expect("Failed to call self")
     }
-    pub fn play_pause(&mut self) {
+    pub fn play_pause(&mut self) -> Result<(), Error> {
         self.sync_request(Box::new(PlayPauseRequest {}))
-            .expect("Failed to call self")
     }
-    pub fn set_callback(&mut self, kodi_info_callback: Box<dyn KodiInfoCallback>) {
+    pub fn set_callback(
+        &mut self,
+        kodi_info_callback: Box<dyn KodiInfoCallback>,
+    ) -> Result<(), Error> {
         self.async_request(Box::new(SetCallbackRequest {
             kodi_info_callback: Some(kodi_info_callback),
         }))
+    }
+    pub fn properties(
+        &mut self,
+        properties: Vec<kodi_rpc_types::PlayerPropertyName>,
+    ) -> Result<kodi_rpc_types::PlayerPropertyValue, Error> {
+        self.sync_request(Box::new(PropertiesRequest { properties }))
     }
 
     fn sync_request<R: 'static + Send + std::fmt::Debug>(
         &mut self,
         control_request: Box<dyn ControlRequest<R> + Send>,
-    ) -> Option<R> {
+    ) -> Result<R, Error> {
         let (result_tx, result_rx) = crossbeam_channel::bounded(1);
         let request_wrapper = Box::new(KodiControlCallbackSync {
             control_request,
             result_tx,
         });
         match self.channel.try_send(request_wrapper) {
-            Ok(()) => Some(result_rx.recv().unwrap()),
-            Err(_) => None,
+            Ok(()) => Ok(result_rx.recv().unwrap()),
+            Err(err) => Err(Error::TrySendError(format!("error: {}", err))),
         }
     }
 
-    fn async_request(&mut self, control_request: Box<dyn ControlRequest<()> + Send>) {
+    fn async_request(
+        &mut self,
+        control_request: Box<dyn ControlRequest<()> + Send>,
+    ) -> Result<(), Error> {
         let request_wrapper = Box::new(KodiControlCallbackAsync { control_request });
         match self.channel.try_send(request_wrapper) {
-            Ok(()) => (),
-            Err(_) => (),
+            Ok(()) => Ok(()),
+            Err(err) => Err(Error::TrySendError(format!("error: {}", err))),
         }
     }
 
