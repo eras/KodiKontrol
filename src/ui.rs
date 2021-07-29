@@ -105,7 +105,7 @@ impl kodi_control::KodiInfoCallback for KodiInfoCallback {
         match self.cb_sink.send(Box::new(move |siv| {
             siv.call_on_name("kodi_playlist_position", |view: &mut TextView| {
                 view.set_content(match position {
-                    Some(position) => format!("Position: {}", position + 1),
+                    Some(position) => format!("#{}", position + 1),
                     None => String::from(""),
                 });
             });
