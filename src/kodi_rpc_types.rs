@@ -379,6 +379,12 @@ impl serde::Serialize for GlobalToggle {
 }
 
 #[derive(Debug, Serialize)]
+pub struct PlayerStopParams {
+    #[serde(rename = "playerid")]
+    pub player_id: PlayerId,
+}
+
+#[derive(Debug, Serialize)]
 pub struct PlayerPlayPauseParams {
     #[serde(rename = "playerid")]
     pub player_id: PlayerId,

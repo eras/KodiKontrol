@@ -16,6 +16,25 @@ pub struct GetResult {
     pub local_addr: std::net::SocketAddr,
 }
 
+// Used when a call has no parameters; never actually serialized
+#[derive(Debug, serde::Serialize)]
+pub struct NoParameters {}
+
+const NO_PARAMS: Option<NoParameters> = None;
+
+// Used for discarding results of a request
+#[derive(Debug)]
+pub struct Discard {}
+
+impl<'de> serde::Deserialize<'de> for Discard {
+    fn deserialize<D>(_deserializer: D) -> Result<Discard, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Discard {})
+    }
+}
+
 // used for retrieving the schema _and mostly_ determining the client address for this address
 pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
     let host = url
@@ -141,52 +160,20 @@ pub async fn ws_jsonrpc_connect(url: &Url) -> Result<WsJsonRPCSession, error::Er
 pub async fn ws_jsonrpc_player_stop(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
-) -> Result<serde_json::Value, error::Error> {
-    let response = session
-        .client
-        .request(
-            "Player.Stop",
-            Some(Params::Map(
-                vec![(
-                    String::from("playerid"),
-                    serde_json::Value::Number(serde_json::Number::from(player_id)),
-                )]
-                .into_iter()
-                .collect(),
-            )),
-        )
-        .await?;
-    match response {
-        Output::Success(response) => Ok(response.result),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(session, "Player.Stop", Some(PlayerStopParams { player_id })).await
 }
 
 pub async fn ws_jsonrpc_get_players(
     session: &mut WsJsonRPCSession,
 ) -> Result<serde_json::Value, error::Error> {
-    let response = session.client.request("Player.GetPlayers", None).await?;
-    match response {
-        Output::Success(response) => Ok(response.result),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+    ws_jsonrpc_request(session, "Player.GetPlayers", NO_PARAMS).await
 }
 
 pub async fn ws_jsonrpc_get_active_players(
     session: &mut WsJsonRPCSession,
 ) -> Result<PlayerGetActivePlayersResponse, error::Error> {
-    let response = session
-        .client
-        .request("Player.GetActivePlayers", None)
-        .await?;
-    match response {
-        Output::Success(response) => {
-            log::debug!("got result: {:?}", response.result);
-            let players = serde_json::from_value(response.result)?;
-            Ok(players)
-        }
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+    ws_jsonrpc_request(session, "Player.GetActivePlayers", NO_PARAMS).await
 }
 
 pub struct Subscription {
@@ -232,68 +219,58 @@ fn value_to_params(value: serde_json::Value) -> Option<Params> {
     }
 }
 
-pub async fn ws_jsonrpc_player_open(
+async fn ws_jsonrpc_request<Request: serde::Serialize, Response: serde::de::DeserializeOwned>(
     session: &mut WsJsonRPCSession,
-    item: PlayerOpenParamsItem,
-) -> Result<(), error::Error> {
+    name: &str,
+    request: Option<Request>,
+) -> Result<Response, error::Error> {
     let response = session
         .client
         .request(
-            "Player.Open",
-            Some(
-                value_to_params(serde_json::to_value(PlayerOpenParams { item }).unwrap())
-                    .expect("Serde_json output doesn't conform params"),
-            ),
+            name,
+            request.map(|x| {
+                let value = serde_json::to_value(x).expect("Cannot serialize request");
+                value_to_params(value).expect("Serde_json output doesn't conform params")
+            }),
         )
         .await?;
     match response {
-        Output::Success(_) => Ok(()),
+        Output::Success(value) => Ok(serde_json::from_value(value.clone().result)?),
         Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
     }
+}
+
+pub async fn ws_jsonrpc_player_open(
+    session: &mut WsJsonRPCSession,
+    item: PlayerOpenParamsItem,
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(session, "Player.Open", Some(PlayerOpenParams { item })).await
 }
 
 pub async fn ws_jsonrpc_player_play_pause(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
     play: GlobalToggle,
-) -> Result<(), error::Error> {
-    let response = session
-        .client
-        .request(
-            "Player.PlayPause",
-            Some(
-                value_to_params(
-                    serde_json::to_value(PlayerPlayPauseParams { player_id, play }).unwrap(),
-                )
-                .expect("Serde_json output doesn't conform params"),
-            ),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(
+        session,
+        "Player.PlayPause",
+        Some(PlayerPlayPauseParams { player_id, play }),
+    )
+    .await
 }
 
 pub async fn ws_jsonrpc_player_goto(
     session: &mut WsJsonRPCSession,
     player_id: PlayerId,
     to: GoTo,
-) -> Result<(), error::Error> {
-    let response = session
-        .client
-        .request(
-            "Player.GoTo",
-            Some(
-                value_to_params(serde_json::to_value(PlayerGoToParams { player_id, to }).unwrap())
-                    .expect("Serde_json output doesn't conform params"),
-            ),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(
+        session,
+        "Player.GoTo",
+        Some(PlayerGoToParams { player_id, to }),
+    )
+    .await
 }
 
 pub async fn ws_jsonrpc_player_get_properties(
@@ -301,102 +278,59 @@ pub async fn ws_jsonrpc_player_get_properties(
     player_id: PlayerId,
     properties: Vec<PlayerPropertyName>,
 ) -> Result<PlayerPropertyValue, error::Error> {
-    let response = session
-        .client
-        .request(
-            "Player.GetProperties",
-            Some(
-                value_to_params(
-                    serde_json::to_value(PlayerGetPropertiesParams {
-                        player_id,
-                        properties,
-                    })
-                    .unwrap(),
-                )
-                .expect("Serde_json output doesn't conform params"),
-            ),
-        )
-        .await?;
-    match response {
-        Output::Success(value) => {
-            log::debug!("raw properties: {:?}", value.result);
-            Ok(serde_json::from_value(value.result)?)
-        }
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+    ws_jsonrpc_request(
+        session,
+        "Player.GetProperties",
+        Some(PlayerGetPropertiesParams {
+            player_id,
+            properties,
+        }),
+    )
+    .await
 }
 
 pub async fn ws_jsonrpc_playlist_add(
     session: &mut WsJsonRPCSession,
     playlist_id: PlaylistId,
     files: Vec<String>,
-) -> Result<(), error::Error> {
-    let response = session
-        .client
-        .request(
-            "Playlist.Add",
-            Some(
-                value_to_params(
-                    serde_json::to_value(PlaylistAddParams {
-                        playlist_id,
-                        items: files
-                            .into_iter()
-                            .map(|file| PlaylistItem::File { file })
-                            .collect(),
-                    })
-                    .unwrap(),
-                )
-                .expect("Serde_json output doesn't conform params"),
-            ),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(
+        session,
+        "Playlist.Add",
+        Some(PlaylistAddParams {
+            playlist_id,
+            items: files
+                .into_iter()
+                .map(|file| PlaylistItem::File { file })
+                .collect(),
+        }),
+    )
+    .await
 }
 
 pub async fn ws_jsonrpc_playlist_clear(
     session: &mut WsJsonRPCSession,
     playlist_id: PlaylistId,
-) -> Result<(), error::Error> {
-    let response = session
-        .client
-        .request(
-            "Playlist.Clear",
-            Some(
-                value_to_params(serde_json::to_value(PlaylistClearParams { playlist_id }).unwrap())
-                    .expect("Serde_json output doesn't conform params"),
-            ),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(
+        session,
+        "Playlist.Clear",
+        Some(PlaylistClearParams { playlist_id }),
+    )
+    .await
 }
 
 pub async fn ws_jsonrpc_gui_activate_window(
     session: &mut WsJsonRPCSession,
     window: GUIWindow,
     parameters: Vec<String>,
-) -> Result<(), error::Error> {
-    let response = session
-        .client
-        .request(
-            "GUI.ActivateWindow",
-            Some(
-                value_to_params(
-                    serde_json::to_value(GUIActivateWindowParams { window, parameters }).unwrap(),
-                )
-                .expect("Serde_json output doesn't conform params"),
-            ),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+) -> Result<Discard, error::Error> {
+    ws_jsonrpc_request(
+        session,
+        "GUI.ActivateWindow",
+        Some(GUIActivateWindowParams { window, parameters }),
+    )
+    .await
 }
 
 pub async fn ws_jsonrpc_introspect(
