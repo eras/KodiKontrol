@@ -13,6 +13,8 @@ use std::collections::HashMap;
 
 use futures::channel::mpsc;
 
+use tokio::select;
+
 pub async fn info_page(_req: HttpRequest) -> impl Responder {
     format!("koko v{}", get_version())
 }
@@ -198,6 +200,7 @@ impl Session {
         Ok(())
     }
 
+    #[rustfmt::skip::macros(select)]
     async fn run_server(
         app_data: AppDataHolder,
         local_ip: std::net::IpAddr,
@@ -215,7 +218,7 @@ impl Session {
             .send(server.addrs()[0])
             .expect("Failed to send server_info");
 
-        tokio::select! {
+        select! {
             done = server.run() => {
                 done.map_err(error::Error::IOError).expect("Failed to run server")
             },

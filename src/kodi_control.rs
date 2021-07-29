@@ -6,6 +6,8 @@ use url::Url;
 
 use thiserror::Error;
 
+use tokio::select;
+
 use futures::{channel::mpsc, StreamExt};
 
 pub struct ControlContext {
@@ -268,6 +270,7 @@ async fn finish(
     Ok(())
 }
 
+#[rustfmt::skip::macros(select)]
 pub async fn rpc_handler(
     mut jsonrpc_session: kodi_rpc::WsJsonRPCSession,
     urls: Vec<Url>,
@@ -343,8 +346,7 @@ pub async fn rpc_handler(
 
         let mut state = State::WaitingStart;
 
-        while let Some(notification) = tokio::select! {
-        // cool indentation provided by rustfmt
+        while let Some(notification) = select! {
             notification = stream.next() => {
                 match notification {
                     Some(ev) => Some(Event::Notification(ev)),
@@ -352,17 +354,18 @@ pub async fn rpc_handler(
                 }
             }
             _int = sigint_rx.next() => Some(Event::SigInt),
-            _delay = tokio::time::sleep_until(match state {
-                State::WaitingTimeout(deadline) => deadline,
-                _ => far_future(),
-            }) => {
+            _delay = tokio::time::sleep_until(
+		match state {
+                    State::WaitingTimeout(deadline) => deadline,
+                    _ => far_future(),
+		}) => {
                 Some(Event::Deadline)
             }
             _exit = exit.wait() => {
-        Some(Event::Exit)
+		Some(Event::Exit)
             }
             control_request = control_channel.next() => {
-        control_request.map(|x| Event::Control(x))
+		control_request.map(|x| Event::Control(x))
             }
         } {
             log::debug!("Got notification: {:?}", notification);

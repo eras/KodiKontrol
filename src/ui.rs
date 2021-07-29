@@ -179,6 +179,7 @@ impl Ui {
         })
     }
 
+    #[rustfmt::skip::macros(select)]
     fn poll_updates(
         mut exit: exit::Exit,
         kodi_control: Arc<Mutex<KodiControl>>,
@@ -193,10 +194,9 @@ impl Ui {
         log::debug!("Starting polling");
 
         while let Some(event) = select! {
-        recv(exit) -> _ => None,
-        recv(ticker) -> _ => Some(Event::Tick),
-            }
-        {
+            recv(exit) -> _ => None,
+            recv(ticker) -> _ => Some(Event::Tick),
+        } {
             match event {
                 Event::Tick => {
                     log::debug!("Tick");
