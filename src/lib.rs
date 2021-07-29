@@ -2,6 +2,7 @@ pub mod error;
 pub mod exit;
 pub mod kodi_control;
 pub mod kodi_rpc;
+pub mod kodi_rpc_types;
 pub mod server;
 pub mod ui;
 pub mod util;

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::{error, exit, kodi_rpc, util::*};
+use crate::{error, exit, kodi_rpc, kodi_rpc_types, util::*};
 
 use url::Url;
 
@@ -8,8 +8,8 @@ use futures::{channel::mpsc, StreamExt};
 
 pub struct ControlContext {
     jsonrpc_session: kodi_rpc::WsJsonRPCSession,
-    player_id: kodi_rpc::PlayerId,
-    playlist_id: kodi_rpc::PlaylistId,
+    player_id: kodi_rpc_types::PlayerId,
+    playlist_id: kodi_rpc_types::PlaylistId,
     kodi_info_callback: Option<Box<dyn KodiInfoCallback>>,
 }
 
@@ -78,7 +78,7 @@ impl ControlRequest<()> for PlayPauseRequest {
         kodi_rpc::ws_jsonrpc_player_play_pause(
             &mut context.jsonrpc_session,
             context.player_id.clone(),
-            kodi_rpc::GlobalToggle::Toggle,
+            kodi_rpc_types::GlobalToggle::Toggle,
         )
         .await
         .expect("TODO failed to play/pause player");
@@ -95,7 +95,7 @@ impl ControlRequest<()> for NextRequest {
         kodi_rpc::ws_jsonrpc_player_goto(
             &mut context.jsonrpc_session,
             context.player_id.clone(),
-            kodi_rpc::GoTo::Next,
+            kodi_rpc_types::GoTo::Next,
         )
         .await
         .expect("TODO failed to go to next track");
@@ -112,7 +112,7 @@ impl ControlRequest<()> for PrevRequest {
         kodi_rpc::ws_jsonrpc_player_goto(
             &mut context.jsonrpc_session,
             context.player_id.clone(),
-            kodi_rpc::GoTo::Previous,
+            kodi_rpc_types::GoTo::Previous,
         )
         .await
         .expect("TODO failed to go to next track");
@@ -121,14 +121,14 @@ impl ControlRequest<()> for PrevRequest {
 }
 
 pub trait KodiInfoCallback: Send + std::fmt::Debug {
-    fn playlist_position(&mut self, position: Option<kodi_rpc::PlaylistPosition>);
+    fn playlist_position(&mut self, position: Option<kodi_rpc_types::PlaylistPosition>);
 }
 
 #[derive(Debug)]
 struct DefaultKodiInfoCallback {}
 
 impl KodiInfoCallback for DefaultKodiInfoCallback {
-    fn playlist_position(&mut self, _position: Option<kodi_rpc::PlaylistPosition>) {}
+    fn playlist_position(&mut self, _position: Option<kodi_rpc_types::PlaylistPosition>) {}
 }
 
 #[derive(Debug)]
@@ -200,8 +200,8 @@ impl KodiControl {
 
 async fn finish(
     jsonrpc_session: &mut kodi_rpc::WsJsonRPCSession,
-    player_id: kodi_rpc::PlayerId,
-    playlist_id: kodi_rpc::PlaylistId,
+    player_id: kodi_rpc_types::PlayerId,
+    playlist_id: kodi_rpc_types::PlaylistId,
     use_playlist: bool,
 ) -> Result<(), error::Error> {
     kodi_rpc::ws_jsonrpc_player_stop(jsonrpc_session, player_id)
@@ -214,7 +214,7 @@ async fn finish(
     }
     kodi_rpc::ws_jsonrpc_gui_activate_window(
         jsonrpc_session,
-        kodi_rpc::GUIWindow::Home,
+        kodi_rpc_types::GUIWindow::Home,
         vec![String::from("required parameter")],
     )
     .await
@@ -235,7 +235,7 @@ pub async fn rpc_handler(
     let result = get_errors(async move {
         let mut stream = kodi_rpc::ws_jsonrpc_subscribe(&mut jsonrpc_session).await?;
 
-        use kodi_rpc::*;
+        use kodi_rpc_types::*;
 
         let playlist_id = 1;
         log::info!("Playing: {:?}", &urls);
@@ -320,7 +320,6 @@ pub async fn rpc_handler(
             }
         } {
             log::debug!("Got notification: {:?}", notification);
-            use kodi_rpc::*;
 
             match notification {
                 Event::Notification(Notification::PlayerOnAVStart(data)) => {

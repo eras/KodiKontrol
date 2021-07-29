@@ -3,7 +3,7 @@ use cursive::view::Margins;
 use cursive::views::{Button, Dialog, DummyView, LinearLayout, TextView};
 use cursive::{Cursive, CursiveExt};
 
-use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc};
+use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc_types};
 
 pub struct Ui {
     siv: Cursive,
@@ -52,7 +52,7 @@ struct KodiInfoCallback {
 }
 
 impl kodi_control::KodiInfoCallback for KodiInfoCallback {
-    fn playlist_position(&mut self, position: Option<kodi_rpc::PlaylistPosition>) {
+    fn playlist_position(&mut self, position: Option<kodi_rpc_types::PlaylistPosition>) {
         match self.cb_sink.send(Box::new(move |siv| {
             siv.call_on_name("kodi_playlist_position", |view: &mut TextView| {
                 view.set_content(match position {
