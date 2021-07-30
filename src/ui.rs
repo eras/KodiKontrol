@@ -1,9 +1,9 @@
 use cursive::traits::*;
 use cursive::view::Margins;
-use cursive::views::{Button, Dialog, DummyView, LinearLayout, ProgressBar, TextView};
+use cursive::views::{Button, Dialog, DummyView, LinearLayout, OnEventView, ProgressBar, TextView};
 use cursive::{Cursive, CursiveExt};
 
-use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc_types, version};
+use crate::{kodi_control, kodi_control::KodiControl, kodi_rpc_types, ui_seek::UiSeek, version};
 
 use crate::{error, exit, util};
 
@@ -30,6 +30,7 @@ pub struct Ui {
 struct UiData {
     kodi_control: Arc<Mutex<KodiControl>>,
     exit: exit::Exit,
+    last_known_seconds: u32,
 }
 
 #[derive(Debug)]
@@ -52,14 +53,18 @@ fn quit(siv: &mut Cursive) {
     Cursive::quit(siv);
 }
 
-fn with_kodi<F, Ret>(siv: &mut Cursive, label: &str, func: F) -> Ret
+fn with_kodi<F, Ret>(siv: &mut Cursive, label: Option<&str>, func: F) -> Ret
 where
     F: FnOnce(&mut KodiControl) -> Result<Ret, kodi_control::Error>,
 {
     let ui_data: &mut UiData = siv.user_data().unwrap();
     let kodi_control = ui_data.kodi_control.clone();
-    siv.focus_name(label)
-        .expect(format!("Failed to focus {}", label).as_str());
+    match label {
+        None => (),
+        Some(label) => siv
+            .focus_name(label)
+            .expect(format!("Failed to focus {}", label).as_str()),
+    }
     let ret = util::sync_panic_error(|| {
         let mut control = kodi_control.lock().unwrap();
         Ok(func(&mut control)?)
@@ -68,12 +73,12 @@ where
 }
 
 fn playlist_prev(siv: &mut Cursive) {
-    with_kodi(siv, "playlist_prev", |kc| kc.playlist_prev());
+    with_kodi(siv, Some("playlist_prev"), |kc| kc.playlist_prev());
 }
 
 fn step(siv: &mut Cursive, label: &str, step: kodi_rpc_types::Step) {
     let seek = kodi_rpc_types::Seek::RelativeStep { step };
-    let info = with_kodi(siv, label, |kc| kc.seek(seek));
+    let info = with_kodi(siv, Some(label), |kc| kc.seek(seek));
     update_time_from_seek_info(siv, info);
 }
 
@@ -94,11 +99,11 @@ fn fwd_step_long(siv: &mut Cursive) {
 }
 
 fn pause_play(siv: &mut Cursive) {
-    with_kodi(siv, "play_pause", |kc| kc.play_pause());
+    with_kodi(siv, Some("play_pause"), |kc| kc.play_pause());
 }
 
 fn playlist_next(siv: &mut Cursive) {
-    with_kodi(siv, "playlist_next", |kc| kc.playlist_next());
+    with_kodi(siv, Some("playlist_next"), |kc| kc.playlist_next());
 }
 
 impl std::fmt::Display for kodi_rpc_types::GlobalTime {
@@ -113,6 +118,14 @@ fn update_time(
     total_time: Option<kodi_rpc_types::GlobalTime>,
     percentage: Option<f64>,
 ) {
+    match &time {
+        None => (),
+        Some(time) => {
+            let ui_data: &mut UiData = siv.user_data().unwrap();
+            ui_data.last_known_seconds =
+                time.hours as u32 * 3600 + time.minutes as u32 * 60 + time.seconds as u32;
+        }
+    }
     siv.call_on_name("kodi_time", |view: &mut TextView| {
         let time = time.map(|x| x.to_string()).unwrap_or(String::from("-"));
         let total_time = total_time
@@ -141,6 +154,24 @@ fn update_time_from_properties(siv: &mut Cursive, properties: kodi_rpc_types::Pl
         properties.total_time,
         Some(properties.percentage),
     )
+}
+
+fn enter_seek_digit(siv: &mut Cursive, digit: char) {
+    let cb_sink = siv.cb_sink().clone();
+    let ui_seek = UiSeek::new(digit).set_callback(move |delta| {
+        let _ = cb_sink.send(Box::new(move |siv| {
+            let ui_data: &UiData = siv.user_data().unwrap();
+            log::debug!("Seeking {} (old pos={})", delta, ui_data.last_known_seconds);
+            let seek = kodi_rpc_types::Seek::RelativeSeconds { seconds: delta };
+            let seek_finished = with_kodi(siv, None, |kc| kc.seek(seek));
+            log::debug!("Seeking finished at {:?}", seek_finished);
+        }));
+    });
+    siv.add_layer(
+        Dialog::around(ui_seek)
+            .title(format!("Seek"))
+            .padding(Margins::lrtb(3, 3, 2, 2)),
+    );
 }
 
 #[derive(Debug)]
@@ -177,6 +208,7 @@ impl Ui {
         let ui_data = UiData {
             kodi_control: kodi_control.clone(),
             exit: exit.clone(),
+            last_known_seconds: 0,
         };
         siv.set_user_data(ui_data);
         siv.set_theme(Self::create_theme(siv.current_theme().clone()));
@@ -212,30 +244,37 @@ impl Ui {
             .child(time)
             .child(DummyView)
             .child(buttons)
-            .full_width();
+            .full_width()
+            .wrap_with(OnEventView::new)
+            .on_event('<', bwd_step_long)
+            .on_event(',', bwd_step_short)
+            .on_event('.', fwd_step_short)
+            .on_event('>', fwd_step_long)
+            .on_event(
+                cursive::event::Event::Key(cursive::event::Key::PageUp),
+                playlist_prev,
+            )
+            .on_event('[', playlist_prev)
+            .on_event(
+                cursive::event::Event::Key(cursive::event::Key::PageDown),
+                playlist_next,
+            )
+            .on_event(']', playlist_next)
+            .on_event(' ', pause_play);
+
+        let view = "-0123456789".chars().fold(view, |view, digit| {
+            view.on_event(digit, move |siv: &mut Cursive| {
+                enter_seek_digit(siv, digit);
+            })
+        });
+
+        siv.add_global_callback('q', |s| s.quit());
 
         siv.add_layer(
             Dialog::around(LinearLayout::horizontal().child(view).full_width())
                 .title(format!("KodiKontrol {}", version::get_version()))
                 .padding(Margins::lrtb(3, 3, 2, 2)),
         );
-
-        siv.add_global_callback('q', |s| s.quit());
-        siv.add_global_callback('<', bwd_step_long);
-        siv.add_global_callback(',', bwd_step_short);
-        siv.add_global_callback('.', fwd_step_short);
-        siv.add_global_callback('>', fwd_step_long);
-        siv.add_global_callback(
-            cursive::event::Event::Key(cursive::event::Key::PageUp),
-            playlist_prev,
-        );
-        siv.add_global_callback('[', playlist_prev);
-        siv.add_global_callback(
-            cursive::event::Event::Key(cursive::event::Key::PageDown),
-            playlist_next,
-        );
-        siv.add_global_callback(']', playlist_next);
-        siv.add_global_callback(' ', pause_play);
 
         let polling_thread = {
             let cb_sink = siv.cb_sink().clone();
