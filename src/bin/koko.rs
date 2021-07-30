@@ -146,6 +146,7 @@ async fn main() -> std::io::Result<()> {
             clap::Arg::new("user")
                 .long("user")
                 .short('u')
+                .default_value("kodi")
                 .takes_value(true)
                 .about("Username of the user for Kodi"),
         )
@@ -190,6 +191,13 @@ async fn main() -> std::io::Result<()> {
                 eprintln!("error: {:?}", err);
                 return Ok(());
             }
+        }
+    };
+
+    let kodi_auth = {
+        match (args.value_of("user"), args.value_of("password")) {
+            (Some(user), Some(pass)) => Some((user.to_string(), pass.to_string())),
+            _ => None,
         }
     };
 
@@ -247,6 +255,7 @@ async fn main() -> std::io::Result<()> {
         files,
         urls_order,
         kodi_address,
+        kodi_auth,
         previously_logged_file: None,
     });
     let (session_tx, session_rx) = tokio::sync::oneshot::channel::<server::Session>();

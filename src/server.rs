@@ -57,6 +57,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
 
 pub struct AppData {
     pub kodi_address: std::net::IpAddr,
+    pub kodi_auth: Option<(String, String)>,
     pub files: HashMap<String, String>,
     pub urls_order: HashMap<String, usize>,
     pub previously_logged_file: Option<String>,
@@ -123,7 +124,8 @@ impl Session {
             )
             .as_str(),
         )?;
-        let jsonrpc_info = kodi_rpc::jsonrpc_get(&url).await?;
+        let auth = app_data.lock().unwrap().kodi_auth.clone();
+        let jsonrpc_info = kodi_rpc::jsonrpc_get(&url, &auth).await?;
 
         let mut jsonrpc_session: kodi_rpc::WsJsonRPCSession = kodi_rpc::connect(&wsurl).await?;
 

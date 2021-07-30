@@ -1,3 +1,5 @@
+use http_auth_basic::Credentials;
+
 use crate::{error, kodi_rpc_types::*};
 
 use url::Url;
@@ -36,7 +38,10 @@ impl<'de> serde::Deserialize<'de> for Discard {
 }
 
 // used for retrieving the schema _and mostly_ determining the client address for this address
-pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
+pub async fn jsonrpc_get(
+    url: &Url,
+    auth: &Option<(String, String)>,
+) -> Result<GetResult, error::Error> {
     let host = url
         .host()
         .ok_or(error::Error::MsgError(String::from("url is missing host")))?
@@ -69,14 +74,20 @@ pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
     let request = Request::builder()
         .uri(path)
         .header("Host", format!("{}", host))
-        .header("Accept", "application/json")
-        .method("GET")
-        .body(Body::from(""))
-        .map_err(|err| {
-            // can't deal with this without boxing?!
-            //error::Error::OtherError(Box::new(err))
-            error::Error::MsgError(format!("Failed to handle request: {:?}", err))
-        })?;
+        .header("Accept", "application/json");
+    let request = match auth {
+        None => request,
+        Some((user, pass)) => {
+            let credentials = Credentials::new(user, pass);
+            let credentials = credentials.as_http_header();
+            request.header("Authorization", credentials)
+        }
+    };
+    let request = request.method("GET").body(Body::from("")).map_err(|err| {
+        // can't deal with this without boxing?!
+        //error::Error::OtherError(Box::new(err))
+        error::Error::MsgError(format!("Failed to handle request: {:?}", err))
+    })?;
 
     let response = request_sender.send_request(request).await?;
     let response_status = response.status();
