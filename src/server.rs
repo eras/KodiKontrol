@@ -26,7 +26,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
     let addr = req.peer_addr().unwrap(); // documentation says this is not None
     let mut app_data = data.lock().unwrap();
     // TODO: handle IPv4 inside IPv6
-    if addr.ip() == app_data.kodi_address {
+    if addr.ip() == app_data.kodi_address || !app_data.ip_access_control {
         let filename = req.match_info().query("filename");
         match app_data.files.get(filename) {
             Some(path) => {
@@ -57,6 +57,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
 
 pub struct AppData {
     pub kodi_address: std::net::IpAddr,
+    pub ip_access_control: bool,
     pub kodi_auth: Option<(String, String)>,
     pub files: HashMap<String, String>,
     pub urls_order: HashMap<String, usize>,

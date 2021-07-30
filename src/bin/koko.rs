@@ -174,6 +174,11 @@ async fn main() -> std::io::Result<()> {
                 .short('d')
                 .about("Write debug information"),
         )
+        .arg(
+            clap::Arg::new("public")
+                .long("public")
+                .about("Don't do IP-based access control"),
+        )
         .get_matches();
 
     match init_logging(args.is_present("debug")) {
@@ -193,6 +198,8 @@ async fn main() -> std::io::Result<()> {
             }
         }
     };
+
+    let ip_access_control = !args.is_present("public");
 
     let kodi_auth = {
         match (args.value_of("user"), args.value_of("password")) {
@@ -255,6 +262,7 @@ async fn main() -> std::io::Result<()> {
         files,
         urls_order,
         kodi_address,
+        ip_access_control,
         kodi_auth,
         previously_logged_file: None,
     });
