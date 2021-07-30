@@ -270,6 +270,10 @@ async fn finish(
     Ok(())
 }
 
+pub struct Args {
+    pub kodi_control_rx: KodiControlReceiver,
+}
+
 #[rustfmt::skip::macros(select)]
 pub async fn rpc_handler(
     mut jsonrpc_session: kodi_rpc::WsJsonRPCSession,
@@ -278,7 +282,7 @@ pub async fn rpc_handler(
     stop_server_tx: tokio::sync::oneshot::Sender<()>,
     rpc_handler_done_tx: tokio::sync::oneshot::Sender<Result<(), error::Error>>,
     mut exit: exit::Exit,
-    mut control_channel: KodiControlReceiver,
+    mut args: Args,
 ) {
     let mut kodi_info_callback: Box<dyn KodiInfoCallback> = Box::new(DefaultKodiInfoCallback {});
     let result = get_errors(async move {
@@ -364,7 +368,7 @@ pub async fn rpc_handler(
             _exit = exit.wait() => {
 		Some(Event::Exit)
             }
-            control_request = control_channel.next() => {
+            control_request = args.kodi_control_rx.next() => {
 		control_request.map(|x| Event::Control(x))
             }
         } {

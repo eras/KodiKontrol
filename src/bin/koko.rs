@@ -221,7 +221,11 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to receive from ui_control_rx");
 
-    match server::Session::new(app_data, session_tx, exit.clone(), kodi_control_rx).await {
+    let kodi_control_args = kodi_control::Args {
+        kodi_control_rx,
+    };
+
+    match server::Session::new(app_data, session_tx, exit.clone(), kodi_control_args).await {
         Ok(()) => (),
         Err(err) => {
             eprintln!("error: {:?}", err);

@@ -107,7 +107,7 @@ impl Session {
         app_data: AppDataHolder,
         result: tokio::sync::oneshot::Sender<Session>,
         exit: exit::Exit,
-        kodi_control_rx: kodi_control::KodiControlReceiver,
+        kodi_control_args: kodi_control::Args,
     ) -> Result<(), error::Error> {
         let url = Url::parse(
             format!(
@@ -174,7 +174,7 @@ impl Session {
                     stop_server_tx,
                     rpc_handler_done_tx,
                     exit.clone(),
-                    kodi_control_rx,
+                    kodi_control_args,
                 ));
 
                 let session = Session {
