@@ -18,11 +18,19 @@ playback.
 A simple IP-based access control is implemented, so only the Kodi
 instance provided is able to access the files.
 
-## Installation
+## Installation in Ubuntu
 
-1) Install the Rust compiler with Cargo e.g. with https://rustup.rs/
+And probably Debian.
 
-2) TODO `sudo apt-get install probably some stuff`
+1) 
+```
+sudo apt-get install ca-certificates curl file \
+    build-essential autoconf automake autotools-dev \
+	libtool xutils-dev libssl-dev git pkg-config \
+	libncurses-dev
+```
+
+2) Install the Rust compiler+Cargo e.g. with https://rustup.rs/
 
 3) `git clone --recursive https://github.com/eras/KodiKontrol`
 
@@ -44,7 +52,11 @@ To define another address, use
 
 `% koko -k mykodi foo.mp4`
 
-IP addresses are also permitted. User/pass parameters aren't actually functional yet..
+IP addresses are also permitted. User/pass parameters are functional,
+but it's pretty useless with Kodi as they affect only the HTTP
+interface. `koko` does use the HTTP interface as well for API reasons,
+but also uses the WebSocket API which [doesn't use
+authentication](https://kodi.tv/article/kodi-remote-access-security-recommendations/).
 
 `--help` works.
 
