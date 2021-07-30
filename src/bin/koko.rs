@@ -225,6 +225,17 @@ async fn actual_main() -> Result<(), Error> {
                 }),
         )
         .arg(
+            clap::Arg::new("server_port")
+                .long("listen")
+                .default_value("0")
+                .takes_value(true)
+                .about("Port to use for serverin HTTP data; default is 0, meaning automatic")
+                .validator(|arg| match arg.parse::<u16>() {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                }),
+        )
+        .arg(
             clap::Arg::new("user")
                 .long("user")
                 .short('u')
@@ -271,6 +282,7 @@ async fn actual_main() -> Result<(), Error> {
 
     let kodi_address = resolve_address(host.hostname).await?;
     let kodi_port = args.value_of("kodi_port").unwrap().parse::<u16>()?;
+    let http_server_port = args.value_of("server_port").unwrap().parse::<u16>()?;
 
     let ip_access_control = !args.is_present("public");
 
@@ -405,6 +417,7 @@ async fn actual_main() -> Result<(), Error> {
     let session_result = server::Session::new(
         app_data,
         kodi_port,
+        http_server_port,
         session_tx,
         exit.clone(),
         kodi_control_args,

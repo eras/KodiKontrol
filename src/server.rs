@@ -124,6 +124,7 @@ impl Session {
     pub async fn new(
         app_data: AppDataHolder,
         kodi_port: u16,
+        http_server_port: u16,
         result: tokio::sync::oneshot::Sender<Session>,
         exit: exit::Exit,
         kodi_control_args: kodi_control::Args,
@@ -210,7 +211,7 @@ impl Session {
 
         let result = Self::run_server(
             app_data,
-            jsonrpc_info.local_addr.ip(),
+            (jsonrpc_info.local_addr.ip(), http_server_port),
             server_info_tx,
             stop_server_rx,
         )
@@ -226,7 +227,7 @@ impl Session {
     #[rustfmt::skip::macros(select)]
     async fn run_server(
         app_data: AppDataHolder,
-        local_ip: std::net::IpAddr,
+        local_addr: (std::net::IpAddr, u16),
         server_info_tx: tokio::sync::oneshot::Sender<std::net::SocketAddr>,
         stop_server_rx: tokio::sync::oneshot::Receiver<()>,
     ) -> Result<(), Error> {
@@ -234,7 +235,7 @@ impl Session {
             let app_data = app_data.clone();
             App::new().configure(move |cfg| configure(cfg, app_data))
         })
-        .bind((local_ip, 0))?;
+        .bind(local_addr)?;
 
         server_info_tx
             .send(server.addrs()[0])
