@@ -1,5 +1,7 @@
 use std::sync::Mutex;
 
+use thiserror::Error;
+
 use crate::{error, exit, kodi_control, kodi_rpc, version::get_version};
 
 use url::Url;
@@ -82,7 +84,7 @@ async fn handle_ctrl_c(mut exit_signal: mpsc::Sender<()>) {
     }
 }
 
-fn url_for_file(addr: std::net::SocketAddr, file: &str) -> Result<Url, error::Error> {
+fn url_for_file(addr: std::net::SocketAddr, file: &str) -> Result<Url, Error> {
     use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
     const FRAGMENT: &AsciiSet = &CONTROLS
         .add(b' ')
@@ -98,6 +100,20 @@ fn url_for_file(addr: std::net::SocketAddr, file: &str) -> Result<Url, error::Er
     Ok(Url::parse(format!("http://{}/file/", addr).as_str())?.join(&filename_escaped)?)
 }
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    URLParseError(#[from] url::ParseError),
+
+    // lol, it goes both ways. this probably isn't a great design.
+    // TODO: have kodi_rpc use its own error type.
+    #[error(transparent)]
+    KokoError(#[from] error::Error),
+}
+
 #[derive(Debug)]
 pub struct Session {
     rpc_handler_done_rx: tokio::sync::oneshot::Receiver<Result<(), error::Error>>,
@@ -111,7 +127,7 @@ impl Session {
         result: tokio::sync::oneshot::Sender<Session>,
         exit: exit::Exit,
         kodi_control_args: kodi_control::Args,
-    ) -> Result<(), error::Error> {
+    ) -> Result<(), Error> {
         let url = Url::parse(
             format!(
                 "http://{}:{}/jsonrpc",
@@ -192,7 +208,7 @@ impl Session {
             }
         });
 
-        Self::run_server(
+        let result = Self::run_server(
             app_data,
             jsonrpc_info.local_addr.ip(),
             server_info_tx,
@@ -201,6 +217,8 @@ impl Session {
         .await;
 
         exit.signal();
+
+        result?;
 
         Ok(())
     }
@@ -211,13 +229,12 @@ impl Session {
         local_ip: std::net::IpAddr,
         server_info_tx: tokio::sync::oneshot::Sender<std::net::SocketAddr>,
         stop_server_rx: tokio::sync::oneshot::Receiver<()>,
-    ) {
+    ) -> Result<(), Error> {
         let server = HttpServer::new(move || {
             let app_data = app_data.clone();
             App::new().configure(move |cfg| configure(cfg, app_data))
         })
-        .bind((local_ip, 0))
-        .expect("failed to construct server");
+        .bind((local_ip, 0))?;
 
         server_info_tx
             .send(server.addrs()[0])
@@ -232,6 +249,7 @@ impl Session {
                 //server.system_exit();
             }
         }
+        Ok(())
     }
     pub async fn finish(self: Self) -> Result<(), error::Error> {
         &self

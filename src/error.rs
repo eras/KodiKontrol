@@ -16,9 +16,6 @@ pub enum Error {
     #[error(transparent)]
     HyperError(#[from] hyper::Error),
 
-    #[error(transparent)]
-    URLParseError(#[from] url::ParseError),
-
     // #[error(transparent)]
     // HttpError(#[from] hyper::http::HttpError),
     #[error("HTTP error {}", .0)]
