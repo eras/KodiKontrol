@@ -48,8 +48,9 @@ struct KodiControlCallbackSync<R> {
 }
 
 #[derive(Debug)]
-struct KodiControlCallbackAsync {
-    control_request: Box<dyn ControlRequest<()> + Send>,
+struct KodiControlCallbackAsync<R> {
+    // R is actually discarded, but it's nice to have the option with same ControlRequest type
+    control_request: Box<dyn ControlRequest<R> + Send>,
 }
 
 #[async_trait]
@@ -65,9 +66,12 @@ where
 }
 
 #[async_trait]
-impl ControlRequestWrapper for KodiControlCallbackAsync {
+impl<R> ControlRequestWrapper for KodiControlCallbackAsync<R>
+where
+    R: 'static + Send + std::fmt::Debug,
+{
     async fn request_wrapper(&mut self, context: ControlContext) -> ControlContext {
-        let (context, ()) = self.control_request.request(context).await;
+        let (context, _) = self.control_request.request(context).await;
         context
     }
 }
@@ -237,6 +241,10 @@ impl KodiControl {
         self.sync_request(Box::new(SeekRequest { seek }))
     }
 
+    pub fn async_seek(&mut self, seek: kodi_rpc_types::Seek) -> Result<(), Error> {
+        self.async_request(Box::new(SeekRequest { seek }))
+    }
+
     fn sync_request<R: 'static + Send + std::fmt::Debug>(
         &mut self,
         control_request: Box<dyn ControlRequest<R> + Send>,
@@ -252,13 +260,16 @@ impl KodiControl {
         }
     }
 
-    fn async_request(
+    fn async_request<R>(
         &mut self,
-        control_request: Box<dyn ControlRequest<()> + Send>,
-    ) -> Result<(), Error> {
+        control_request: Box<dyn ControlRequest<R> + Send>,
+    ) -> Result<(), Error>
+    where
+        R: Send + std::fmt::Debug + 'static,
+    {
         let request_wrapper = Box::new(KodiControlCallbackAsync { control_request });
         match self.channel.try_send(request_wrapper) {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
             Err(err) => Err(Error::TrySendError(format!("error: {}", err))),
         }
     }

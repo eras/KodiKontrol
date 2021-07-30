@@ -78,6 +78,7 @@ fn playlist_prev(siv: &mut Cursive) {
 
 fn step(siv: &mut Cursive, label: &str, step: kodi_rpc_types::Step) {
     let seek = kodi_rpc_types::Seek::RelativeStep { step };
+    //with_kodi(siv, Some(label), |kc| kc.async_seek(seek));
     let info = with_kodi(siv, Some(label), |kc| kc.seek(seek));
     update_time_from_seek_info(siv, info);
 }
