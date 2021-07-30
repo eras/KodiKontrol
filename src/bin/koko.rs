@@ -254,18 +254,25 @@ async fn main() -> std::io::Result<()> {
         let exit = exit.clone();
         tokio::task::spawn(async move {
             log::debug!("Waiting session");
-            let session = session_rx.await.expect("Failed to receive session");
-            log::debug!("Got session");
-            match session.finish().await {
-                Ok(()) => {
-                    exit.signal();
-                    log::info!("Exiting");
+            match session_rx.await {
+                Err(_err) => {
+                    // at this point we're exiting already.. right?
                     Ok(())
                 }
-                Err(error) => {
-                    eprintln!("Setup with error: {}", error);
-                    actix_rt::System::current().stop();
-                    Ok(())
+                Ok(session) => {
+                    log::debug!("Got session");
+                    match session.finish().await {
+                        Ok(()) => {
+                            exit.signal();
+                            log::info!("Exiting");
+                            Ok(())
+                        }
+                        Err(error) => {
+                            eprintln!("Setup with error: {}", error);
+                            actix_rt::System::current().stop();
+                            Ok(())
+                        }
+                    }
                 }
             }
         })
@@ -297,22 +304,18 @@ async fn main() -> std::io::Result<()> {
         start_seconds,
     };
 
-    match server::Session::new(app_data, session_tx, exit.clone(), kodi_control_args).await {
-        Ok(()) => (),
-        Err(err) => {
-            eprintln!("error: {:?}", err);
-            return Ok(());
-        }
-    }
+    let session_result =
+        server::Session::new(app_data, session_tx, exit.clone(), kodi_control_args).await;
     ui_control.quit();
-
     ui_join.await.expect("Failed to join ui_join");
-
     match app_join.await.expect("Failed to join app_join") {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            eprintln!("error: {:?}", err);
-            return Ok(());
-        }
+        Ok(()) => (),
+        Err(err) => eprintln!("error: {:?}", err),
     }
+
+    match session_result {
+        Ok(()) => (),
+        Err(err) => eprintln!("error: {:?}", err),
+    }
+    Ok(())
 }
