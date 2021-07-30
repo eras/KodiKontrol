@@ -430,6 +430,7 @@ pub enum Seek {
     AbsolutePercentage { percentage: f64 },
     AbsoluteTime { time: PlayerPositionTime },
     RelativeStep { step: Step },
+    // this is _quite_ imprecise
     RelativeSeconds { seconds: i32 },
 }
 
