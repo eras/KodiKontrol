@@ -15,12 +15,14 @@ pub struct Host {
     pub port: Option<u16>,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub listen_port: Option<u16>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Config {
     pub default: Option<String>,
     pub host: BTreeMap<String, Host>,
+    pub listen_port: Option<u16>,
 }
 
 impl Config {

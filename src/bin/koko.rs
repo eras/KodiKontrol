@@ -227,7 +227,6 @@ async fn actual_main() -> Result<(), Error> {
         .arg(
             clap::Arg::new("server_port")
                 .long("listen")
-                .default_value("0")
                 .takes_value(true)
                 .about("Port to use for serverin HTTP data; default is 0, meaning automatic")
                 .validator(|arg| match arg.parse::<u16>() {
@@ -282,7 +281,17 @@ async fn actual_main() -> Result<(), Error> {
 
     let kodi_address = resolve_address(host.hostname).await?;
     let kodi_port = args.value_of("kodi_port").unwrap().parse::<u16>()?;
-    let http_server_port = args.value_of("server_port").unwrap().parse::<u16>()?;
+    let http_server_port = {
+        let server_port = match args.value_of("server_port").map(|x| x.parse::<u16>()) {
+            None => None,
+            Some(Ok(x)) => Some(x),
+            Some(Err(x)) => Err(x)?,
+        };
+        server_port
+            .or(host.listen_port)
+            .or(config.listen_port)
+            .unwrap_or(0)
+    };
 
     let ip_access_control = !args.is_present("public");
 
