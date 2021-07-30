@@ -1,0 +1,15 @@
+default = "localhost"  # required if more than one host is configured and no -k switch is provided
+
+[host.localhost]
+# hostname = "localhost" # optional (if missing, the key is used)
+user = "kodi"          # optional
+password = "kodi"      # optional
+port = 8080            # optional
+
+[host.downstairs]
+hostname = "192.168.42.6"
+user = "kodi"
+password = "42"
+
+[host.oasis]
+hostname = "oasis"

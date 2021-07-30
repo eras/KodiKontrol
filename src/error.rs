@@ -42,6 +42,9 @@ pub enum Error {
     #[error(transparent)]
     UiControlError(#[from] crate::ui::Error),
 
+    #[error(transparent)]
+    ConfigError(#[from] crate::config::Error),
+
     // This would make the Error non-Sendable which is an issue
     // #[error(transparent)]
     // OtherError(#[from] Box<dyn std::error::Error>),

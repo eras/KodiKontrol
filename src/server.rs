@@ -107,14 +107,16 @@ impl Session {
     // will return once the server has finished
     pub async fn new(
         app_data: AppDataHolder,
+        kodi_port: u16,
         result: tokio::sync::oneshot::Sender<Session>,
         exit: exit::Exit,
         kodi_control_args: kodi_control::Args,
     ) -> Result<(), error::Error> {
         let url = Url::parse(
             format!(
-                "http://{}:8080/jsonrpc",
-                app_data.lock().unwrap().kodi_address
+                "http://{}:{}/jsonrpc",
+                app_data.lock().unwrap().kodi_address,
+                kodi_port
             )
             .as_str(),
         )?;

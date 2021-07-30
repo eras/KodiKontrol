@@ -62,5 +62,6 @@ IP addresses are also permitted. User/pass parameters aren't actually functional
 | q          | Quit                                                                            |
 | -, 0-9     | Enter [-]hh:mm:ss (starting from seconds) for a relative seek. Also 5m42 works. |
 
+### Config file
 
-
+Refer to [the example config file](koko.ini.example).

@@ -1,30 +1,54 @@
-use clap::ArgMatches;
-use kodi_kontrol::{exit, kodi_control, server, ui, util, version::get_version};
+use kodi_kontrol::{config, exit, kodi_control, server, ui, util, version::get_version};
+
+use directories::ProjectDirs;
+use std::path::Path;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use trust_dns_resolver::error::ResolveError;
 use trust_dns_resolver::AsyncResolver;
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Failed to resolve host {}: {}", .0, .1)]
+    ResolveNameError(String, String),
+
     #[error(transparent)]
-    ResolveError(#[from] trust_dns_resolver::error::ResolveError),
+    ResolveError(#[from] ResolveError),
 
     #[error(transparent)]
     SetupError(#[from] SetupError),
 
     #[error("Failed to parse time: {}", .0)]
     ParseTimeError(String),
+
+    #[error("Failure to process path: {}", .0)]
+    UnsupportedPath(String),
+
+    #[error("Failed to read config: {}", .0)]
+    ConfigIOError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    ConfigError(#[from] config::Error),
+
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
 }
 
-async fn resolve_address(args: &ArgMatches) -> Result<std::net::IpAddr, Error> {
+async fn resolve_address(hostname_arg: Option<String>) -> Result<std::net::IpAddr, Error> {
     let resolver = AsyncResolver::tokio_from_system_conf()?;
 
-    let kodi_address: std::net::IpAddr = match args.value_of("kodi") {
-        Some(host) => resolver.lookup_ip(host).await?.iter().next().unwrap(),
+    let kodi_address: std::net::IpAddr = match &hostname_arg {
+        Some(host) => resolver
+            .lookup_ip(host.clone())
+            .await
+            .map_err(|err| Error::ResolveNameError(host.clone(), err.to_string()))?
+            .iter()
+            .next()
+            .unwrap(),
         None => "127.0.0.1".parse().unwrap(),
     };
 
@@ -120,8 +144,48 @@ fn parse_time_as_seconds(str: &str) -> Result<u32, Error> {
     }
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+fn get_config_file(config_file_arg: Option<&str>) -> Result<String, Error> {
+    let joined_pathbuf;
+    let joined_path;
+    // argument overrides all automation
+    let config_file: &Path = if let Some(config_file) = config_file_arg {
+        Path::new(config_file)
+    } else {
+        let config_file = Path::new(&config::FILENAME);
+        // does the default config filename exist? if so, go with that
+        let config_file: &Path = if config_file.exists() {
+            config_file
+        } else {
+            // otherwise, choose the XDG directory if it can be created
+            (if let Some(proj_dirs) = ProjectDirs::from("", "Erkki Seppälä", "koko") {
+                let config_dir = proj_dirs.config_dir();
+                if let Ok(()) = std::fs::create_dir_all(config_dir) {
+                    // it's fine to set this to a non-existing file; it will be ignored, but
+                    // the filename will still be used for saving
+                    joined_pathbuf = config_dir.join("koko.ini");
+                    joined_path = joined_pathbuf.as_path();
+                    Some(&joined_path)
+                } else {
+                    None
+                }
+            } else {
+                None
+            })
+            .unwrap_or(&config_file)
+        };
+        config_file
+    };
+    let config_file = if let Some(path) = config_file.to_str() {
+        path
+    } else {
+        return Err(Error::UnsupportedPath(
+            "Sorry, unsupported config file path (needs to be legal UTF8)".to_string(),
+        ));
+    };
+    Ok(config_file.to_string())
+}
+
+async fn actual_main() -> Result<(), Error> {
     let exit = exit::Exit::new();
 
     let args = clap::App::new("koko")
@@ -136,11 +200,29 @@ async fn main() -> std::io::Result<()> {
                 .about("File to stream"),
         )
         .arg(
+            clap::Arg::new("config")
+                .long("config")
+                .short('c')
+                .takes_value(true)
+                .about("Config file to load"),
+        )
+        .arg(
             clap::Arg::new("kodi")
                 .long("kodi")
                 .short('k')
                 .takes_value(true)
                 .about("Address of the host running Kodi; defaults to localhost"),
+        )
+        .arg(
+            clap::Arg::new("kodi_port")
+                .long("port")
+                .default_value("8080")
+                .takes_value(true)
+                .about("Port to use for HTTP connection (9090 will always be used for WebSocket)")
+                .validator(|arg| match arg.parse::<u16>() {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                }),
         )
         .arg(
             clap::Arg::new("user")
@@ -181,29 +263,28 @@ async fn main() -> std::io::Result<()> {
         )
         .get_matches();
 
-    match init_logging(args.is_present("debug")) {
-        Ok(()) => (),
-        Err(err) => {
-            eprintln!("error: {:?}", err);
-            return Ok(());
-        }
-    }
+    init_logging(args.is_present("debug"))?;
 
-    let kodi_address = {
-        match resolve_address(&args).await {
-            Ok(x) => x,
-            Err(err) => {
-                eprintln!("error: {:?}", err);
-                return Ok(());
-            }
-        }
-    };
+    let config_file = get_config_file(args.value_of("config"))?;
+    let config = config::Config::load(&config_file)?;
+    let host = config.get_host(args.value_of("kodi"))?;
+
+    let kodi_address = resolve_address(host.hostname).await?;
+    let kodi_port = args.value_of("kodi_port").unwrap().parse::<u16>()?;
 
     let ip_access_control = !args.is_present("public");
 
     let kodi_auth = {
-        match (args.value_of("user"), args.value_of("password")) {
-            (Some(user), Some(pass)) => Some((user.to_string(), pass.to_string())),
+        match (
+            // mix'n match
+            args.value_of("user")
+                .map(|x| String::from(x))
+                .or(host.username),
+            args.value_of("password")
+                .map(|x| String::from(x))
+                .or(host.password),
+        ) {
+            (Some(user), Some(pass)) => Some((user.clone(), pass.clone())),
             _ => None,
         }
     };
@@ -321,8 +402,14 @@ async fn main() -> std::io::Result<()> {
         start_seconds,
     };
 
-    let session_result =
-        server::Session::new(app_data, session_tx, exit.clone(), kodi_control_args).await;
+    let session_result = server::Session::new(
+        app_data,
+        kodi_port,
+        session_tx,
+        exit.clone(),
+        kodi_control_args,
+    )
+    .await;
     ui_control.quit();
     ui_join.await.expect("Failed to join ui_join");
     match app_join.await.expect("Failed to join app_join") {
@@ -335,4 +422,15 @@ async fn main() -> std::io::Result<()> {
         Err(err) => eprintln!("error: {:?}", err),
     }
     Ok(())
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    match actual_main().await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!("error: {}", err);
+            Ok(())
+        }
+    }
 }
