@@ -52,23 +52,30 @@ fn quit(siv: &mut Cursive) {
     Cursive::quit(siv);
 }
 
-fn playlist_prev(siv: &mut Cursive) {
+fn with_kodi<F, Ret>(siv: &mut Cursive, label: &str, func: F) -> Ret
+where
+    F: FnOnce(&mut KodiControl) -> Result<Ret, kodi_control::Error>,
+{
     let ui_data: &mut UiData = siv.user_data().unwrap();
-    util::sync_panic_error(|| Ok(ui_data.kodi_control.lock().unwrap().playlist_prev()?));
-    siv.focus_name("prev").expect("Failed to focus prev");
+    let ret = util::sync_panic_error(|| {
+        let mut control = ui_data.kodi_control.lock().unwrap();
+        Ok(func(&mut control)?)
+    });
+    siv.focus_name(label)
+        .expect(format!("Failed to focus {}", label).as_str());
+    ret
+}
+
+fn playlist_prev(siv: &mut Cursive) {
+    with_kodi(siv, "playlist_prev", |kc| kc.playlist_prev());
 }
 
 fn pause_play(siv: &mut Cursive) {
-    let ui_data: &mut UiData = siv.user_data().unwrap();
-    util::sync_panic_error(|| Ok(ui_data.kodi_control.lock().unwrap().play_pause()?));
-    siv.focus_name("play_pause")
-        .expect("Failed to focus play pause");
+    with_kodi(siv, "play_pause", |kc| kc.play_pause());
 }
 
 fn playlist_next(siv: &mut Cursive) {
-    let ui_data: &mut UiData = siv.user_data().unwrap();
-    util::sync_panic_error(|| Ok(ui_data.kodi_control.lock().unwrap().playlist_next()?));
-    siv.focus_name("next").expect("Failed to focus next");
+    with_kodi(siv, "playlist_next", |kc| kc.playlist_next());
 }
 
 impl std::fmt::Display for kodi_rpc_types::GlobalTime {
@@ -142,9 +149,9 @@ impl Ui {
             .with_name("progress");
 
         let buttons = LinearLayout::horizontal()
-            .child(Button::new_raw("   \u{23ee}   ", playlist_prev).with_name("prev"))
+            .child(Button::new_raw("   \u{23ee}   ", playlist_prev).with_name("playlist_prev"))
             .child(Button::new_raw("   \u{23ef}   ", pause_play).with_name("play_pause"))
-            .child(Button::new_raw("   \u{23ed}   ", playlist_next).with_name("next"))
+            .child(Button::new_raw("   \u{23ed}   ", playlist_next).with_name("playlist_next"))
             .child(DummyView)
             .child(Button::new_raw("Quit", quit));
 
