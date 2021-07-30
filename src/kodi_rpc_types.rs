@@ -273,13 +273,15 @@ pub struct PlayerVideoStream {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GlobalTime {
     pub hours: u8,
     pub milliseconds: i16, // apparently milliseconsd can be negative..
     pub minutes: u8,
     pub seconds: u8,
 }
+
+pub type PlayerPositionTime = GlobalTime;
 
 // Player.Property.Value
 #[derive(Debug, Deserialize, Clone)]
@@ -404,6 +406,49 @@ pub struct PlayerGoToParams {
     #[serde(rename = "playerid")]
     pub player_id: PlayerId,
     pub to: GoTo,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub enum Step {
+    #[serde(rename = "smallforward")]
+    SmallForward,
+    #[serde(rename = "smallbackward")]
+    SmallBackward,
+    #[serde(rename = "bigforward")]
+    BigForward,
+    #[serde(rename = "bigbackward")]
+    BigBackward,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(untagged)]
+pub enum Seek {
+    // these abilities are twice. let's use the better structured versions.
+    // Percentage(f32),
+    // Time(PlayerPositionTime),
+    // RelativeSeek(RelativeSeek),
+    AbsolutePercentage { percentage: f64 },
+    AbsoluteTime { time: PlayerPositionTime },
+    RelativeStep { step: Step },
+    RelativeSeconds { seconds: i32 },
+}
+
+// Player.Seek
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerSeekParams {
+    #[serde(rename = "playerid")]
+    pub player_id: PlayerId,
+    #[serde(rename = "value")]
+    pub value: Seek,
+}
+
+// Player.Seek
+#[derive(Debug, Deserialize, Clone)]
+pub struct PlayerSeekReturns {
+    pub percentage: Option<f64>,
+    pub time: Option<GlobalTime>,
+    #[serde(rename = "totaltime")]
+    pub total_time: Option<GlobalTime>,
 }
 
 // GUI.ActivateWindow

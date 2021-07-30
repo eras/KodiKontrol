@@ -164,6 +164,19 @@ pub async fn player_stop(
     request(session, "Player.Stop", Some(PlayerStopParams { player_id })).await
 }
 
+pub async fn player_seek(
+    session: &mut WsJsonRPCSession,
+    player_id: PlayerId,
+    value: Seek,
+) -> Result<PlayerSeekReturns, error::Error> {
+    request(
+        session,
+        "Player.Seek",
+        Some(PlayerSeekParams { player_id, value }),
+    )
+    .await
+}
+
 pub async fn get_players(
     session: &mut WsJsonRPCSession,
 ) -> Result<serde_json::Value, error::Error> {
