@@ -221,8 +221,20 @@ impl Ui {
         );
 
         siv.add_global_callback('q', |s| s.quit());
-        siv.add_global_callback('<', playlist_prev);
-        siv.add_global_callback('>', playlist_next);
+        siv.add_global_callback('<', bwd_step_long);
+        siv.add_global_callback(',', bwd_step_short);
+        siv.add_global_callback('.', fwd_step_short);
+        siv.add_global_callback('>', fwd_step_long);
+        siv.add_global_callback(
+            cursive::event::Event::Key(cursive::event::Key::PageUp),
+            playlist_prev,
+        );
+        siv.add_global_callback('[', playlist_prev);
+        siv.add_global_callback(
+            cursive::event::Event::Key(cursive::event::Key::PageDown),
+            playlist_next,
+        );
+        siv.add_global_callback(']', playlist_next);
         siv.add_global_callback(' ', pause_play);
 
         let polling_thread = {
