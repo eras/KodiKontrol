@@ -1,0 +1,29 @@
+FROM ubuntu:groovy
+
+WORKDIR /root
+
+# common packages
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    ca-certificates curl file \
+    build-essential \
+    autoconf automake autotools-dev libtool xutils-dev \
+    libssl-dev git pkg-config libncurses-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# install toolchain
+RUN curl https://sh.rustup.rs -sSf | \
+    sh -s -- --default-toolchain stable -y
+
+ENV PATH=/root/.cargo/bin:$PATH
+
+COPY .git /root/project/.git/
+COPY Cargo.toml /root/project/
+COPY build.rs /root/project/
+COPY ext /root/project/ext/
+COPY src /root/project/src/
+
+WORKDIR /root/project/
+RUN git clean -d -x -f
+
+# RUN apt-get update && apt-get install --no-install-recommends -y libncurses-dev && rm -rf /var/lib/apt/lists/*
