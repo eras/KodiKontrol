@@ -272,6 +272,7 @@ async fn finish(
 
 pub struct Args {
     pub kodi_control_rx: KodiControlReceiver,
+    pub start_seconds: Option<u32>,
 }
 
 #[rustfmt::skip::macros(select)]
@@ -285,6 +286,7 @@ pub async fn rpc_handler(
     mut args: Args,
 ) {
     let mut kodi_info_callback: Box<dyn KodiInfoCallback> = Box::new(DefaultKodiInfoCallback {});
+    let mut first_play = true;
     let result = get_errors(async move {
         let mut stream = kodi_rpc::subscribe(&mut jsonrpc_session).await?;
 
@@ -398,6 +400,31 @@ pub async fn rpc_handler(
                         playlist_position = Some(props.playlist_position);
                     }
                     kodi_info_callback.playlist_position(playlist_position);
+
+                    if first_play {
+                        first_play = false;
+                        match &args.start_seconds {
+                            None => (),
+                            Some(start_seconds) => {
+                                use std::convert::TryFrom;
+                                kodi_rpc::player_seek(
+                                    &mut jsonrpc_session,
+                                    player_id,
+                                    Seek::RelativeSeconds {
+                                        seconds: i32::try_from(start_seconds.clone()).map_err(
+                                            |_| {
+                                                error::Error::MsgError(format!(
+                                                    "Cannot convert {} to signed 32-bit integer",
+                                                    start_seconds
+                                                ))
+                                            },
+                                        )?,
+                                    },
+                                )
+                                .await?;
+                            }
+                        }
+                    }
 
                     state = State::WaitingLast;
                 }

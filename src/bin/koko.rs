@@ -15,6 +15,9 @@ pub enum Error {
 
     #[error(transparent)]
     SetupError(#[from] SetupError),
+
+    #[error("Failed to parse time: {}", .0)]
+    ParseTimeError(String),
 }
 
 async fn resolve_address(args: &ArgMatches) -> Result<std::net::IpAddr, Error> {
@@ -64,6 +67,59 @@ fn init_logging(enable: bool) -> Result<(), SetupError> {
     Ok(())
 }
 
+// 1h4m3s -> 1*3600 + 4*60 + 3
+fn parse_time_as_seconds(str: &str) -> Result<u32, Error> {
+    enum State {
+        Begin,
+        Value(u32),
+        Mul,
+    }
+    enum Class {
+        Digit(u8),
+        Multiplier(u32),
+    }
+    let mut state = State::Begin;
+    let mut seconds = 0u32;
+    for char in str.chars() {
+        let class = match char {
+            char if char >= '0' && char <= '9' => Class::Digit(char as u8 - '0' as u8),
+            'h' => Class::Multiplier(3600),
+            'm' => Class::Multiplier(60),
+            's' => Class::Multiplier(1),
+            char => {
+                return Err(Error::ParseTimeError(format!(
+                    "Invalid character: {}",
+                    char
+                )))
+            }
+        };
+        match class {
+            Class::Digit(digit) => {
+                let value = match state {
+                    State::Value(value) => value,
+                    _ => 0,
+                };
+                state = State::Value(value * 10 + (digit as u32));
+            }
+            Class::Multiplier(mul) => {
+                let value = match state {
+                    State::Value(value) => value,
+                    _ => return Err(Error::ParseTimeError(String::from("Unexpected 'm'"))),
+                };
+                seconds += value * mul;
+                state = State::Mul;
+            }
+        }
+    }
+
+    match state {
+        State::Mul => Ok(seconds),
+        _ => Err(Error::ParseTimeError(String::from(
+            "Expected time specifier at the end",
+        )))?,
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let exit = exit::Exit::new();
@@ -101,6 +157,17 @@ async fn main() -> std::io::Result<()> {
                 .about("Password for the user"),
         )
         .arg(
+            clap::Arg::new("start")
+                .long("start")
+                .short('s')
+                .takes_value(true)
+                .about("Start position, like 5m, or 5m5s, or 5s")
+                .validator(|arg| match parse_time_as_seconds(arg) {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                }),
+        )
+        .arg(
             clap::Arg::new("debug")
                 .long("debug")
                 .short('d')
@@ -125,6 +192,10 @@ async fn main() -> std::io::Result<()> {
             }
         }
     };
+
+    let start_seconds = args
+        .value_of("start")
+        .map(|x| parse_time_as_seconds(x).unwrap());
 
     let mut files = HashMap::new();
     let mut urls_order = HashMap::new();
@@ -223,6 +294,7 @@ async fn main() -> std::io::Result<()> {
 
     let kodi_control_args = kodi_control::Args {
         kodi_control_rx,
+        start_seconds,
     };
 
     match server::Session::new(app_data, session_tx, exit.clone(), kodi_control_args).await {
