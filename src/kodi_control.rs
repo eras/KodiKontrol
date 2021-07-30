@@ -13,7 +13,6 @@ use futures::{channel::mpsc, StreamExt};
 pub struct ControlContext {
     jsonrpc_session: kodi_rpc::WsJsonRPCSession,
     player_id: kodi_rpc_types::PlayerId,
-    playlist_id: kodi_rpc_types::PlaylistId,
     kodi_info_callback: Option<Box<dyn KodiInfoCallback>>,
 }
 
@@ -505,7 +504,6 @@ pub async fn rpc_handler(
                     let context = ControlContext {
                         jsonrpc_session,
                         player_id,
-                        playlist_id,
                         kodi_info_callback: Some(kodi_info_callback),
                     };
                     let context = control_request.request_wrapper(context).await;
