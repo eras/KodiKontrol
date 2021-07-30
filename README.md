@@ -50,13 +50,13 @@ IP addresses are also permitted. User/pass parameters aren't actually functional
 
 ### Shortcuts
 
-| Key        | Function                   |
-|------------|----------------------------|
-| [/PageUp   | Previous entry in playlist |
-| ]/PageDown | Next entry in playlist     |
-| ,          | Short seek backwards       |
-| .          | Short seek forwards        |
-| <          | Long seek backwards        |
-| >          | Long seek forwards         |
-| space      | Play/pause                 |
-| q          | Quit                       |
+| Key        | Function                                                    |
+|------------|-------------------------------------------------------------|
+| [/PageUp   | Previous entry in playlist or the beginning of current one. |
+| ]/PageDown | Next entry in playlist                                      |
+| ,          | Short seek backwards                                        |
+| .          | Short seek forwards                                         |
+| <          | Long seek backwards                                         |
+| >          | Long seek forwards                                          |
+| space      | Play/pause                                                  |
+| q          | Quit                                                        |
