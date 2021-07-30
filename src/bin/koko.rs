@@ -282,11 +282,10 @@ async fn actual_main() -> Result<(), Error> {
     let kodi_address = resolve_address(host.hostname).await?;
     let kodi_port = args.value_of("kodi_port").unwrap().parse::<u16>()?;
     let http_server_port = {
-        let server_port = match args.value_of("server_port").map(|x| x.parse::<u16>()) {
-            None => None,
-            Some(Ok(x)) => Some(x),
-            Some(Err(x)) => Err(x)?,
-        };
+        let server_port = args
+            .value_of("server_port")
+            .map(|x| x.parse::<u16>())
+            .transpose()?;
         server_port
             .or(host.listen_port)
             .or(config.listen_port)
