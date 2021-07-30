@@ -120,6 +120,28 @@ impl ControlRequest<()> for PlayPauseRequest {
 }
 
 #[derive(Debug)]
+struct SeekRequest {
+    seek: kodi_rpc_types::Seek,
+}
+
+#[async_trait]
+impl ControlRequest<kodi_rpc_types::PlayerSeekReturns> for SeekRequest {
+    async fn request(
+        &mut self,
+        mut context: ControlContext,
+    ) -> (ControlContext, kodi_rpc_types::PlayerSeekReturns) {
+        let value = kodi_rpc::player_seek(
+            &mut context.jsonrpc_session,
+            context.player_id.clone(),
+            self.seek.clone(),
+        )
+        .await
+        .expect("Failed to seek");
+        (context, value)
+    }
+}
+
+#[derive(Debug)]
 struct NextRequest {}
 
 #[async_trait]
@@ -208,6 +230,12 @@ impl KodiControl {
         properties: Vec<kodi_rpc_types::PlayerPropertyName>,
     ) -> Result<Option<kodi_rpc_types::PlayerPropertyValue>, Error> {
         self.sync_request(Box::new(PropertiesRequest { properties }))
+    }
+    pub fn seek(
+        &mut self,
+        seek: kodi_rpc_types::Seek,
+    ) -> Result<kodi_rpc_types::PlayerSeekReturns, Error> {
+        self.sync_request(Box::new(SeekRequest { seek }))
     }
 
     fn sync_request<R: 'static + Send + std::fmt::Debug>(

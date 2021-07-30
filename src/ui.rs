@@ -57,17 +57,40 @@ where
     F: FnOnce(&mut KodiControl) -> Result<Ret, kodi_control::Error>,
 {
     let ui_data: &mut UiData = siv.user_data().unwrap();
-    let ret = util::sync_panic_error(|| {
-        let mut control = ui_data.kodi_control.lock().unwrap();
-        Ok(func(&mut control)?)
-    });
+    let kodi_control = ui_data.kodi_control.clone();
     siv.focus_name(label)
         .expect(format!("Failed to focus {}", label).as_str());
+    let ret = util::sync_panic_error(|| {
+        let mut control = kodi_control.lock().unwrap();
+        Ok(func(&mut control)?)
+    });
     ret
 }
 
 fn playlist_prev(siv: &mut Cursive) {
     with_kodi(siv, "playlist_prev", |kc| kc.playlist_prev());
+}
+
+fn step(siv: &mut Cursive, label: &str, step: kodi_rpc_types::Step) {
+    let seek = kodi_rpc_types::Seek::RelativeStep { step };
+    let info = with_kodi(siv, label, |kc| kc.seek(seek));
+    update_time_from_seek_info(siv, info);
+}
+
+fn bwd_step_short(siv: &mut Cursive) {
+    step(siv, "bwd_step_short", kodi_rpc_types::Step::SmallBackward);
+}
+
+fn bwd_step_long(siv: &mut Cursive) {
+    step(siv, "bwd_step_long", kodi_rpc_types::Step::BigBackward);
+}
+
+fn fwd_step_short(siv: &mut Cursive) {
+    step(siv, "fwd_step_short", kodi_rpc_types::Step::SmallForward);
+}
+
+fn fwd_step_long(siv: &mut Cursive) {
+    step(siv, "fwd_step_long", kodi_rpc_types::Step::BigForward);
 }
 
 fn pause_play(siv: &mut Cursive) {
@@ -84,22 +107,40 @@ impl std::fmt::Display for kodi_rpc_types::GlobalTime {
     }
 }
 
-fn update_time(siv: &mut Cursive, properties: kodi_rpc_types::PlayerPropertyValue) {
-    let properties2 = properties.clone();
+fn update_time(
+    siv: &mut Cursive,
+    time: Option<kodi_rpc_types::GlobalTime>,
+    total_time: Option<kodi_rpc_types::GlobalTime>,
+    percentage: Option<f64>,
+) {
     siv.call_on_name("kodi_time", |view: &mut TextView| {
-        let time = properties
-            .time
-            .map(|x| x.to_string())
-            .unwrap_or(String::from("-"));
-        let total_time = properties
-            .total_time
+        let time = time.map(|x| x.to_string()).unwrap_or(String::from("-"));
+        let total_time = total_time
             .map(|x| x.to_string())
             .unwrap_or(String::from("-"));
         view.set_content(format!("{} / {}", time, total_time));
     });
-    siv.call_on_name("progress", |view: &mut ProgressBar| {
-        view.set_value(properties2.percentage as usize);
-    });
+    match percentage {
+        None => (),
+        Some(percentage) => {
+            let _ = siv.call_on_name("progress", |view: &mut ProgressBar| {
+                view.set_value(percentage as usize);
+            });
+        }
+    }
+}
+
+fn update_time_from_seek_info(siv: &mut Cursive, seek: kodi_rpc_types::PlayerSeekReturns) {
+    update_time(siv, seek.time, seek.total_time, seek.percentage)
+}
+
+fn update_time_from_properties(siv: &mut Cursive, properties: kodi_rpc_types::PlayerPropertyValue) {
+    update_time(
+        siv,
+        properties.time,
+        properties.total_time,
+        Some(properties.percentage),
+    )
 }
 
 #[derive(Debug)]
@@ -148,9 +189,18 @@ impl Ui {
             .with_label(|_value: usize, _bounds: (usize, usize)| -> String { String::from("") })
             .with_name("progress");
 
+        // https://en.wikipedia.org/wiki/Media_control_symbols
         let buttons = LinearLayout::horizontal()
             .child(Button::new_raw("   \u{23ee}   ", playlist_prev).with_name("playlist_prev"))
+            .child(
+                Button::new_raw("   \u{23ea}\u{23ea}  ", bwd_step_long).with_name("bwd_step_long"),
+            )
+            .child(Button::new_raw("   \u{23ea}   ", bwd_step_short).with_name("bwd_step_short"))
             .child(Button::new_raw("   \u{23ef}   ", pause_play).with_name("play_pause"))
+            .child(Button::new_raw("   \u{23e9}   ", fwd_step_short).with_name("fwd_step_short"))
+            .child(
+                Button::new_raw("   \u{23e9}\u{23e9}  ", fwd_step_long).with_name("fwd_step_long"),
+            )
             .child(Button::new_raw("   \u{23ed}   ", playlist_next).with_name("playlist_next"))
             .child(DummyView)
             .child(Button::new_raw("Quit", quit));
@@ -218,7 +268,7 @@ impl Ui {
                         ])?;
                         match info {
                             Some(info) => cb_sink
-                                .send(Box::new(|s| update_time(s, info)))
+                                .send(Box::new(|s| update_time_from_properties(s, info)))
                                 .map_err(|err| Error::CrossbeamSendError(err.to_string()))?,
                             None => (), // I guess we didn't get the data this time..
                         }
