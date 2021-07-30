@@ -451,6 +451,33 @@ pub struct PlayerSeekReturns {
     pub total_time: Option<GlobalTime>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub enum SettingsLevel {
+    #[serde(rename = "basic")]
+    Basic,
+    #[serde(rename = "standard")]
+    Standard,
+    #[serde(rename = "advanced")]
+    Advanced,
+    #[serde(rename = "expert")]
+    Expert,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SettingsFilter {
+    pub category: String,
+    pub section: String,
+}
+
+// Settings.GetSettings
+#[derive(Debug, Serialize, Clone)]
+pub struct SettingsGetSettingsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<SettingsLevel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<SettingsFilter>,
+}
+
 // GUI.ActivateWindow
 #[derive(Debug, Serialize)]
 pub struct GUIActivateWindowParams {

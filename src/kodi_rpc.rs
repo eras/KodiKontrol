@@ -98,26 +98,18 @@ pub async fn jsonrpc_get(url: &Url) -> Result<GetResult, error::Error> {
 //     }
 // }
 
-// it seems the JSONRPC port is not accessible from here.. nor is it easy for user to change.
-pub async fn http_jsonrpc_get_expert_settings(url: &Url) -> Result<(), error::Error> {
-    let client = HttpClient::new(url.as_str())?;
-    let response = client
-        .request(
-            "Settings.GetSettings",
-            Some(Params::Map(
-                vec![(
-                    String::from("level"),
-                    serde_json::Value::String(String::from("expert")),
-                )]
-                .into_iter()
-                .collect(),
-            )),
-        )
-        .await?;
-    match response {
-        Output::Success(_) => Ok(()),
-        Output::Failure(value) => Err(error::Error::JsonrpcError(value)),
-    }
+pub async fn get_settings(
+    session: &mut WsJsonRPCSession,
+    level: Option<SettingsLevel>,
+    category_section: Option<(String, String)>,
+) -> Result<serde_json::Value, error::Error> {
+    let filter = category_section.map(|(category, section)| SettingsFilter { category, section });
+    request(
+        session,
+        "Settings.GetSettings",
+        Some(SettingsGetSettingsParams { level, filter }),
+    )
+    .await
 }
 
 pub async fn http_jsonrpc_get_setting(
