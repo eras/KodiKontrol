@@ -1,0 +1,51 @@
+name: Build
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Build started notification
+        uses: s3krit/matrix-message-action@v0.0.3
+        with:
+          room_id: ${{ secrets.MATRIX_ROOM_ID }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          message: "KodiKontrol build started. [Progress.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          server: ${{ secrets.MATRIX_SERVER }}
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install build deps
+        run: sudo apt-get install ca-certificates curl file build-essential autoconf automake autotools-dev libtool xutils-dev libssl-dev git pkg-config libncurses-dev
+      - uses: actions-rs/toolchain@v1
+        with:
+          # non-stable needed to use -Z unstable-options --config
+          toolchain: nightly
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: 'cargo +nightly -Z unstable-options --config rustc-link-search=\"/usr/lib/x86_64-linux-gnu\" build'
+      - name: Build succeeded notification
+        if: ${{ success() }}
+        uses: s3krit/matrix-message-action@v0.0.3
+        with:
+          room_id: ${{ secrets.MATRIX_ROOM_ID }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          message: "KodiKontrol build complete. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          server: ${{ secrets.MATRIX_SERVER }}
+      - name: Build failed notification
+        if: ${{ !success() }}
+        uses: s3krit/matrix-message-action@v0.0.3
+        with:
+          room_id: ${{ secrets.MATRIX_ROOM_ID }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          message: "KodiKontrol build failed. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          server: ${{ secrets.MATRIX_SERVER }}
