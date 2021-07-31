@@ -1,4 +1,5 @@
 pub mod config;
+pub mod discover;
 pub mod error;
 pub mod exit;
 pub mod kodi_control;
