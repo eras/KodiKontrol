@@ -32,7 +32,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
         let filename = req.match_info().query("filename");
         match app_data.files.get(filename) {
             Some(path) => {
-                let path: PathBuf = path.parse().unwrap();
+                let path = path.clone();
 
                 let same_as_before = match &app_data.previously_logged_file {
                     Some(file) if file == filename => true,
@@ -61,7 +61,7 @@ pub struct AppData {
     pub kodi_address: std::net::IpAddr,
     pub ip_access_control: bool,
     pub kodi_auth: Option<(String, String)>,
-    pub files: HashMap<String, String>,
+    pub files: HashMap<String, PathBuf>,
     pub urls_order: HashMap<String, usize>,
     pub previously_logged_file: Option<String>,
 }

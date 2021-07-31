@@ -354,7 +354,7 @@ async fn actual_main() -> Result<(), Error> {
         while files.contains_key(&name(&url_name, count)) {
             count += 1;
         }
-        files.insert(name(&url_name, count), String::from(source));
+        files.insert(name(&url_name, count), path);
         urls_order.insert(name(&url_name, count), order_index);
         order_index += 1;
     }
