@@ -18,7 +18,14 @@ playback.
 A simple IP-based access control is implemented, so only the Kodi
 instance provided is able to access the files.
 
-## Installation in Ubuntu
+## Binaries
+
+Binaries for Ubuntu, MacOS X and Windows are available in the [GitHub releases
+page](../../releases/latest/).
+
+Only the Ubuntu binary has been tested to function (on Debian).
+
+## Building in Ubuntu
 
 And probably Debian.
 
