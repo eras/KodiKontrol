@@ -21,8 +21,7 @@ jobs:
         run: sudo apt-get install ca-certificates curl file build-essential autoconf automake autotools-dev libtool xutils-dev libssl-dev git pkg-config libncurses-dev
       - uses: actions-rs/toolchain@v1
         with:
-          # non-stable needed to use -Z unstable-options --config
-          toolchain: nightly
+          toolchain: stable
       - uses: actions/cache@v2
         with:
           path: |
@@ -32,7 +31,7 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - run: 'cargo +nightly -Z unstable-options --config rustc-link-search=\"/usr/lib/x86_64-linux-gnu\" build'
+      - run: 'cargo build'
       - name: Build succeeded notification
         if: ${{ success() }}
         uses: s3krit/matrix-message-action@v0.0.3

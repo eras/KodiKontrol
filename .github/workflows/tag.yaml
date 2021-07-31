@@ -30,14 +30,14 @@ jobs:
         run: sudo apt-get install ca-certificates curl file build-essential autoconf automake autotools-dev libtool xutils-dev libssl-dev git pkg-config libncurses-dev
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
       - name: Set annotated tag info information
         id: vars2
         run: echo ::set-output name=git_message::"$(git tag -n999 -l $(git describe --tags))"
       - name: build
         env:
           GIT_DESCRIBE: ${{ steps.vars.outputs.git_describe }}
-        run: 'cargo +nightly -Z unstable-options --config rustc-link-search=\"/usr/lib/x86_64-linux-gnu\" build --release'
+        run: 'cargo build --release'
       - run: strip target/release/koko
       - uses: actions/upload-artifact@v2
         with:
