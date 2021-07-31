@@ -159,15 +159,9 @@ fn get_config_file(config_file_arg: Option<&str>) -> Result<String, Error> {
             // otherwise, choose the XDG directory if it can be created
             (if let Some(proj_dirs) = ProjectDirs::from("", "Erkki Seppälä", "koko") {
                 let config_dir = proj_dirs.config_dir();
-                if let Ok(()) = std::fs::create_dir_all(config_dir) {
-                    // it's fine to set this to a non-existing file; it will be ignored, but
-                    // the filename will still be used for saving
-                    joined_pathbuf = config_dir.join("koko.ini");
-                    joined_path = joined_pathbuf.as_path();
-                    Some(&joined_path)
-                } else {
-                    None
-                }
+                joined_pathbuf = config_dir.join("koko.ini");
+                joined_path = joined_pathbuf.as_path();
+                Some(&joined_path)
             } else {
                 None
             })
