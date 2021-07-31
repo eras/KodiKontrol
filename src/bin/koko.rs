@@ -198,7 +198,13 @@ async fn actual_main() -> Result<(), Error> {
                 .long("config")
                 .short('c')
                 .takes_value(true)
-                .about("Config file to load"),
+                .about(
+                    format!(
+                        "Config file to load, defaults to {}",
+                        get_config_file(None)?
+                    )
+                    .as_str(),
+                ),
         )
         .arg(
             clap::Arg::new("kodi")
