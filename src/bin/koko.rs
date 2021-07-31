@@ -315,7 +315,7 @@ async fn actual_main() -> Result<(), Error> {
 
     let mut files = HashMap::new();
     let mut urls_order = HashMap::new();
-    let mut file_counts = HashMap::new();
+    let mut url_counts = HashMap::new();
 
     let mut order_index = 0usize;
 
@@ -331,14 +331,14 @@ async fn actual_main() -> Result<(), Error> {
             .expect("TODO: filename is required to be valid UTF8")
             .to_string();
 
-        let mut count = if file_counts.contains_key(&url_name) {
-            let count: &u32 = file_counts.get(&url_name).unwrap();
+        let mut count = if url_counts.contains_key(&url_name) {
+            let count: &u32 = url_counts.get(&url_name).unwrap();
             let count = count + 1;
-            file_counts.insert(url_name.clone(), count);
+            url_counts.insert(url_name.clone(), count);
             count
         } else {
             let count = 1;
-            file_counts.insert(url_name.clone(), count);
+            url_counts.insert(url_name.clone(), count);
             count
         };
 
