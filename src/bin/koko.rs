@@ -22,6 +22,9 @@ pub enum Error {
     #[error(transparent)]
     SetupError(#[from] SetupError),
 
+    #[error("Cannot find file {}", .0.to_string_lossy())]
+    FileNotFoundError(PathBuf),
+
     #[error("Failed to parse time: {}", .0)]
     ParseTimeError(String),
 
@@ -319,11 +322,11 @@ async fn actual_main() -> Result<(), Error> {
 
     let mut order_index = 0usize;
 
-    for source in args.values_of("SOURCE").unwrap() {
-        let path: PathBuf = source
-            .to_string()
-            .parse()
-            .expect("Failed to parse filename");
+    for source in args.values_of_os("SOURCE").unwrap() {
+        let path: PathBuf = Path::new(source).to_path_buf();
+        if !path.exists() {
+            return Err(Error::FileNotFoundError(path));
+        }
         let url_name = path
             .file_stem()
             .unwrap()
