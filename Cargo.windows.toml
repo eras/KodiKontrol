@@ -29,9 +29,9 @@ http-auth-basic = "0.1.3"
 atomicwrites = "0.3.0"
 directories = "3.0.2"
 
-# Non-windows specifics: https://github.com/rust-lang/cargo/issues/1197
-cursive = { version = "0.16.3" }
-clap = "3.0.0-beta.2"
+# Windows specifics: https://github.com/rust-lang/cargo/issues/1197
+cursive = { version = "0.16.3", features = ["crossterm-backend"], default-features = false, optional = false }
+clap = { version = "3.0.0-beta.2", features = ["std", "suggestions", "derive", "cargo"], default-features = false, optional = false }
 
 [build-dependencies]
 vergen = "3"

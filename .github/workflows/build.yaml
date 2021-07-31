@@ -4,8 +4,10 @@ on: [push]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Build started notification
         uses: s3krit/matrix-message-action@v0.0.3
@@ -14,11 +16,13 @@ jobs:
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
           message: "KodiKontrol build started. [Progress.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
+        if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: actions/checkout@v2
         with:
           submodules: true
       - name: Install build deps
         run: sudo apt-get install ca-certificates curl file build-essential autoconf automake autotools-dev libtool xutils-dev libssl-dev git pkg-config libncurses-dev
+        if: ${{ matrix.os == 'ubuntu-latest' }}
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -31,9 +35,11 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: 'Copy-Item -Path Cargo.windows.toml -Destination Cargo.toml'
+        if: ${{ matrix.os == 'windows-latest' }}
       - run: 'cargo build'
       - name: Build succeeded notification
-        if: ${{ success() }}
+        if: ${{ success() && matrix.os == 'ubuntu-latest' }}
         uses: s3krit/matrix-message-action@v0.0.3
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
@@ -41,7 +47,7 @@ jobs:
           message: "KodiKontrol build complete. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
       - name: Build failed notification
-        if: ${{ !success() }}
+        if: ${{ !success() && matrix.os == 'ubuntu-latest' }}
         uses: s3krit/matrix-message-action@v0.0.3
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
