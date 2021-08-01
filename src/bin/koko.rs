@@ -362,9 +362,16 @@ async fn setup_mode(
     config: config::Config,
     config_file: &str,
 ) -> Result<(), Error> {
-    let ui_setup = ui_setup::UiSetup::new(config, config_file);
-
-    Ok(ui_setup.run()?)
+    let config_file = String::from(config_file);
+    match tokio::task::spawn_blocking(move || {
+        let ui_setup = ui_setup::UiSetup::new(config, config_file.as_str());
+        Ok(ui_setup.run()?)
+    })
+    .await
+    {
+        Ok(res) => res,
+        Err(_) => Ok(()), // ignore
+    }
 }
 
 async fn actual_main() -> Result<(), Error> {

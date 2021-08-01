@@ -2,7 +2,7 @@ use cursive::traits::*;
 use cursive::utils::span::SpannedString;
 use cursive::view::Margins;
 use cursive::views::{
-    Button, Dialog, DummyView, EditView, LinearLayout, ScrollView, SelectView, TextView,
+    Button, Checkbox, Dialog, DummyView, EditView, LinearLayout, ScrollView, SelectView, TextView,
 };
 use cursive::{Cursive, CursiveExt};
 
@@ -10,7 +10,7 @@ use crate::ui_callback::*;
 
 use std::collections::BTreeMap;
 
-use crate::{config, ui_discovery, version};
+use crate::{config, exit::Exit, ui_discovery, version};
 
 use thiserror::Error;
 
@@ -76,6 +76,15 @@ impl UpdateDialog {
                         40,
                         host.hostname.clone().unwrap_or(label.clone()),
                     ))
+                    .child(
+                        LinearLayout::horizontal()
+                            .child(TextView::new("  Discovery: "))
+                            .child(
+                                Checkbox::new()
+                                    .with_checked(host.discovery)
+                                    .with_name("discovery"),
+                            ),
+                    )
                     .child(make_edit_view(
                         "       Port: ",
                         "port",
@@ -165,6 +174,9 @@ impl UpdateDialog {
         // TODO: better handling/indication of errors
 
         let hostname = empty_to_none(edit_view_content(siv, "hostname"));
+        let discovery = siv
+            .call_on_name("discovery", move |view: &mut Checkbox| view.is_checked())
+            .unwrap();
         let port: Option<u16> = edit_view_content(siv, "port").parse().ok();
         let listen_port: Option<u16> = edit_view_content(siv, "listen_port").parse().ok();
         let username = empty_to_none(edit_view_content(siv, "username"));
@@ -172,6 +184,7 @@ impl UpdateDialog {
 
         config::Host {
             hostname,
+            discovery,
             port,
             username,
             password,
@@ -193,6 +206,27 @@ fn edit_view_content(siv: &mut Cursive, name: &str) -> String {
         (*view.get_content()).clone()
     })
     .unwrap()
+}
+
+fn add_discovered_dialog(siv: &mut Cursive, record: mdns::Record) {
+    let hostname = record.name.clone();
+    let ip = crate::discover::to_ip_addr(&record)
+        .expect("ui_discover should have filtered this already");
+    let host = config::Host {
+        hostname: Some(format!("{}", ip)),
+        discovery: false,
+        ..Default::default()
+    };
+    UpdateDialog::open(siv, (hostname.clone(), host), false).on_ok(
+        move |siv: &mut Cursive, (label, host): (String, config::Host)| -> bool {
+            siv.call_on_name("config_hosts", move |config_hosts: &mut ConfigHostsView| {
+                let index = config_hosts.len();
+                config_hosts.add_item(label.clone(), (index, label.clone(), host.clone()));
+                true
+            });
+            true
+        },
+    );
 }
 
 fn add_dialog(siv: &mut Cursive) {
@@ -259,6 +293,8 @@ impl UiSetup {
     pub fn new(config: config::Config, config_file: &str) -> UiSetup {
         let mut siv = Cursive::default();
 
+        let exit = Exit::new();
+
         let mut config_hosts = ConfigHostsView::new();
 
         {
@@ -281,11 +317,25 @@ impl UiSetup {
 
         let config_file_view = TextView::new(format!("Config file: {}", config_file));
 
-        let hosts = LinearLayout::horizontal().child(
-            Dialog::around(LinearLayout::vertical().child(config_hosts))
-                .title("Config")
+        let hosts = LinearLayout::horizontal()
+            .child(
+                Dialog::around(LinearLayout::vertical().child(config_hosts))
+                    .title("Config")
+                    .padding(Margins::lrtb(2, 2, 0, 0)),
+            )
+            .child(
+                Dialog::around(
+                    LinearLayout::vertical()
+                        .child(
+                            ui_discovery::UiDiscovery::new(exit.clone(), siv.cb_sink().clone())
+                                .on_submit(add_discovered_dialog),
+                        )
+                        .wrap_with(ScrollView::new)
+                        .show_scrollbars(true),
+                )
+                .title("Discovery")
                 .padding(Margins::lrtb(2, 2, 0, 0)),
-        );
+            );
 
         let buttons = LinearLayout::horizontal()
             .child(Button::new("New host", add_dialog))

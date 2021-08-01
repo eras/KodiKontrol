@@ -55,6 +55,9 @@ To run the interactive setup do:
 
 `% koko --setup`
 
+In the setup interface you will be able to automatically find running
+Kodi instances and add them to your list of hosts.
+
 To run with the default instance:
 
 `% koko *.mp4`

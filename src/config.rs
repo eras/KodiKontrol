@@ -13,10 +13,16 @@ pub struct Credentials {}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Host {
     pub hostname: Option<String>,
+    #[serde(default = "default_discovery")]
+    pub discovery: bool,
     pub port: Option<u16>,
     pub username: Option<String>,
     pub password: Option<String>,
     pub listen_port: Option<u16>,
+}
+
+fn default_discovery() -> bool {
+    false
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
