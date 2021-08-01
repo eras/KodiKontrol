@@ -58,11 +58,17 @@ To run the interactive setup do:
 In the setup interface you will be able to automatically find running
 Kodi instances and add them to your list of hosts.
 
+Due to https://github.com/dylanmckay/mdns/pull/25 there will be a
+short delay when using hosts configured this way. If you have a static
+IP for the host, you may disable discovery for the service and use
+that IP as its host name instead, for faster startup. (It's only one
+second probably, though.)
+
 To run with the default instance:
 
 `% koko *.mp4`
 
-To define another address, use
+To use another address, use
 
 `% koko -k mykodi foo.mp4`
 
