@@ -1,4 +1,6 @@
-use kodi_kontrol::{config, exit, kodi_control, server, ui, ui_setup, util, version::get_version};
+use kodi_kontrol::{
+    config, discover, exit, kodi_control, server, ui, ui_setup, util, version::get_version,
+};
 
 use directories::ProjectDirs;
 use std::path::Path;
@@ -18,6 +20,12 @@ pub enum Error {
 
     #[error(transparent)]
     ResolveError(#[from] ResolveError),
+
+    #[error(transparent)]
+    DiscoverError(#[from] discover::Error),
+
+    #[error("Sorry, cannot find host {} via discovery", .0)]
+    CannotDiscoverHostError(String),
 
     #[error(transparent)]
     LoggingSetupError(#[from] LoggingSetupError),
@@ -47,21 +55,41 @@ pub enum Error {
     ParseIntError(#[from] std::num::ParseIntError),
 }
 
-async fn resolve_address(hostname_arg: Option<String>) -> Result<std::net::IpAddr, Error> {
-    let resolver = AsyncResolver::tokio_from_system_conf()?;
+async fn resolve_address(
+    hostname_arg: Option<String>,
+    discovery: bool,
+) -> Result<std::net::IpAddr, Error> {
+    match hostname_arg {
+        Some(hostname) if discovery => match discover::discover_first(hostname.as_str()).await {
+            Ok(Some(host)) => Ok(host),
+            Ok(None) => Err(Error::CannotDiscoverHostError(hostname)),
+            Err(err) => Err(Error::DiscoverError(err)),
+        },
+        _ => {
+            let resolver = AsyncResolver::tokio_from_system_conf()?;
 
-    let kodi_address: std::net::IpAddr = match &hostname_arg {
-        Some(host) => resolver
-            .lookup_ip(host.clone())
-            .await
-            .map_err(|err| Error::ResolveNameError(host.clone(), err.to_string()))?
-            .iter()
-            .next()
-            .unwrap(),
-        None => "127.0.0.1".parse().unwrap(),
-    };
-
-    Ok(kodi_address)
+            match &hostname_arg {
+                Some(hostname) => {
+                    match resolver
+                        .lookup_ip(hostname.clone())
+                        .await
+                        .map_err(|err| Error::ResolveNameError(hostname.clone(), err.to_string()))
+                    {
+                        Ok(resolve) => Ok(resolve.iter().next().unwrap()),
+                        Err(Error::ResolveNameError(hostname, err)) if discovery => {
+                            match discover::discover_first(hostname.as_str()).await {
+                                Ok(Some(hostname)) => Ok(hostname),
+                                Ok(None) => Err(Error::ResolveNameError(hostname, err)),
+                                Err(err) => Err(Error::DiscoverError(err)),
+                            }
+                        }
+                        Err(err) => Err(err),
+                    }
+                }
+                None => Ok("127.0.0.1".parse().unwrap()),
+            }
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -192,7 +220,7 @@ async fn player_mode(args: clap::ArgMatches, config: config::Config) -> Result<(
     let exit = exit::Exit::new();
     let host = config.get_host(args.value_of("kodi"))?;
 
-    let kodi_address = resolve_address(host.hostname).await?;
+    let kodi_address = resolve_address(host.hostname, host.discovery).await?;
     let kodi_port = args.value_of("kodi_port").unwrap().parse::<u16>()?;
     let http_server_port = {
         let server_port = args

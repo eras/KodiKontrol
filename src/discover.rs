@@ -9,13 +9,44 @@ use std::collections::HashSet;
 const HTTP_SERVICE_NAME: &str = "_xbmc-jsonrpc-h._tcp.local";
 //const WS_SERVICE_NAME: &str = "_xbmc-jsonrpc._tcp.local";
 
-type Error = mdns::Error;
+pub type Error = mdns::Error;
 
 #[rustfmt::skip::macros(select)]
-pub async fn discover(
-    tx: crossbeam_channel::Sender<Record>,
-    mut exit: Exit,
-) -> Result<(), mdns::Error> {
+pub async fn discover_first(hostname: &str) -> Result<Option<IpAddr>, Error> {
+    let stream = mdns::discover::all(HTTP_SERVICE_NAME, Duration::from_secs(1))?.listen();
+    pin_mut!(stream);
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(5000);
+
+    log::info!("Starting discovering for {}", hostname);
+
+    while let Some(response) = select! {
+	response = stream.next() => {
+	    match response {
+		Some(Ok(response)) => Some(response),
+		Some(Err(_)) => None,
+		None => None,
+	    }
+	}
+	_deadline = tokio::time::sleep_until(deadline) => {
+	    None
+	}
+    } {
+        for record in response.records() {
+            if record.name == hostname {
+                if let Some(ip) = to_ip_addr(&record) {
+                    log::info!("Found ip {}", ip);
+                    return Ok(Some(ip));
+                }
+            }
+        }
+    }
+    log::info!("Found no ip");
+    Ok(None)
+}
+
+#[rustfmt::skip::macros(select)]
+pub async fn discover(tx: crossbeam_channel::Sender<Record>, mut exit: Exit) -> Result<(), Error> {
     let discovery: tokio::task::JoinHandle<Result<(), Error>> = tokio::spawn(async move {
         // Use a short polling period due to
         // https://github.com/dylanmckay/mdns/pull/25 not yet merged:

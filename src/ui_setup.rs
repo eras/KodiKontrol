@@ -210,11 +210,9 @@ fn edit_view_content(siv: &mut Cursive, name: &str) -> String {
 
 fn add_discovered_dialog(siv: &mut Cursive, record: mdns::Record) {
     let hostname = record.name.clone();
-    let ip = crate::discover::to_ip_addr(&record)
-        .expect("ui_discover should have filtered this already");
     let host = config::Host {
-        hostname: Some(format!("{}", ip)),
-        discovery: false,
+        hostname: Some(hostname.clone()),
+        discovery: true,
         ..Default::default()
     };
     UpdateDialog::open(siv, (hostname.clone(), host), false).on_ok(
