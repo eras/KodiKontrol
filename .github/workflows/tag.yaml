@@ -76,7 +76,7 @@ jobs:
       - name: build
         env:
           GIT_DESCRIBE: ${{ needs.create_release.outputs.git_describe }}
-        run: 'cargo build --release'
+        run: 'cargo build --release --frozen'
       - run: strip target/release/koko
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
       - uses: actions/upload-artifact@v2
@@ -84,6 +84,7 @@ jobs:
           name: koko
           path: |
             target/release/koko
+            Cargo.lock
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
       # https://github.com/actions/upload-release-asset
       - name: Upload Release Asset
@@ -137,7 +138,9 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          # use Cargo.toml as the key, I think it will be a better key here than Cargo.lock that gets
+          # regenerated on each Windows build
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
       - name: build
         env:
           GIT_DESCRIBE: ${{ needs.create_release.outputs.git_describe }}
@@ -147,6 +150,7 @@ jobs:
           name: koko
           path: |
             target/release/koko.exe
+            Cargo.lock
       # https://github.com/actions/upload-release-asset
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
