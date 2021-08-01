@@ -3,14 +3,14 @@ listen_port = 0        # optional; default value is 0 meaning automatic (command
 
 [host.localhost]
 # hostname = "localhost" # optional (if missing, the key is used)
-user = "kodi"          # optional
+username = "kodi"      # optional
 password = "kodi"      # optional
 port = 8080            # optional
 listen_port = 0        # optional; overrides global (commandline overrides this)
 
 [host.downstairs]
 hostname = "192.168.42.6"
-user = "kodi"
+username = "kodi"
 password = "42"
 
 [host.oasis]
