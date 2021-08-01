@@ -4,6 +4,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::io::Write;
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -139,6 +140,9 @@ impl Config {
     }
 
     pub fn save(self, filename: &str) -> Result<(), Error> {
+        let mut config_dir = Path::new(filename).to_path_buf();
+        config_dir.pop();
+        std::fs::create_dir_all(config_dir)?;
         let contents = toml::to_string(&self)?;
         let writer = atomicwrites::AtomicFile::new(filename, atomicwrites::AllowOverwrite);
         writer.write(|f| f.write_all(contents.as_bytes()))?;
