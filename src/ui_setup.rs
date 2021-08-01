@@ -6,8 +6,7 @@ use cursive::views::{
 };
 use cursive::{Cursive, CursiveExt};
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::ui_callback::*;
 
 use std::collections::BTreeMap;
 
@@ -56,8 +55,6 @@ fn make_edit_view(label: &str, name: &str, width: usize, content: String) -> Box
     )
 }
 
-type Callback<Args, Ret> = Rc<RefCell<Option<Box<dyn Fn(&mut Cursive, Args) -> Ret>>>>;
-
 #[derive(Clone)]
 struct UpdateDialog {
     ok_callback: Callback<(String, config::Host), bool>,
@@ -66,8 +63,8 @@ struct UpdateDialog {
 
 impl UpdateDialog {
     fn open(siv: &mut Cursive, (label, host): (String, config::Host), show_remove: bool) -> Self {
-        let ok_callback = Rc::new(RefCell::new(None));
-        let remove_callback = Rc::new(RefCell::new(None));
+        let ok_callback = Callback::new();
+        let remove_callback = Callback::new();
 
         siv.add_layer({
             let dialog = Dialog::around(
@@ -115,7 +112,7 @@ impl UpdateDialog {
                 move |siv| {
                     let label = edit_view_content(siv, "label");
                     let host = Self::make_host_from_edit(siv);
-                    match Self::call(ok_callback.clone(), siv, (label, host)) {
+                    match ok_callback.call(siv, (label, host)) {
                         None | Some(true) => {
                             siv.pop_layer();
                         }
@@ -127,7 +124,7 @@ impl UpdateDialog {
                 dialog.button("Remove", {
                     let remove_callback = remove_callback.clone();
                     move |siv| {
-                        let _ = Self::call(remove_callback.clone(), siv, ());
+                        let _ = remove_callback.call(siv, ());
                     }
                 })
             } else {
@@ -144,35 +141,20 @@ impl UpdateDialog {
         }
     }
 
-    fn on_ok<F>(self, callback: F) -> Self
+    fn on_ok<F>(mut self, callback: F) -> Self
     where
         F: Fn(&mut Cursive, (String, config::Host)) -> bool + 'static,
     {
-        self.ok_callback.replace(Some(Box::new(callback)));
+        self.ok_callback.set(callback);
         self
     }
 
-    fn on_remove<F>(self, callback: F) -> Self
+    fn on_remove<F>(mut self, callback: F) -> Self
     where
         F: Fn(&mut Cursive, ()) -> () + 'static,
     {
-        self.remove_callback.replace(Some(Box::new(callback)));
+        self.remove_callback.set(callback);
         self
-    }
-
-    fn call<F, Args, Ret>(
-        callback: Rc<RefCell<Option<Box<F>>>>,
-        siv: &mut Cursive,
-        args: Args,
-    ) -> Option<Ret>
-    where
-        F: Fn(&mut Cursive, Args) -> Ret + 'static + ?Sized,
-    {
-        let callback = callback.borrow();
-        match &*callback {
-            None => None,
-            Some(callback) => Some(callback(siv, args)),
-        }
     }
 
     fn make_host_from_edit(siv: &mut Cursive) -> config::Host {
