@@ -14,4 +14,8 @@ username = "kodi"
 password = "42"
 
 [host.oasis]
-hostname = "oasis"
+hostname = "oasis"     # use DNS or hosts
+
+[host.gumbo]
+hostname = "LibreELEC.local"
+discovery = true       # use ZeroConf discover
