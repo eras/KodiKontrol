@@ -51,13 +51,22 @@ prefer to use them in this case.
 
 ## Usage
 
-To run (or maybe test) with a local instance, just run
+To run the interactive setup do:
+
+`% koko --setup`
+
+To run with the default instance:
 
 `% koko *.mp4`
 
 To define another address, use
 
 `% koko -k mykodi foo.mp4`
+
+If such a label is found from config, it's used, otherwise normal host
+name resolving is applied. Note: domain search name does not work on
+Windows, you need to enter complete host name
+(e.g. `hostname.localdomain`).
 
 IP addresses are also permitted. User/pass parameters are functional,
 but it's pretty useless with Kodi as they affect only the HTTP

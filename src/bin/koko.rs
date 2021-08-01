@@ -1,4 +1,4 @@
-use kodi_kontrol::{config, exit, kodi_control, server, ui, util, version::get_version};
+use kodi_kontrol::{config, exit, kodi_control, server, ui, ui_setup, util, version::get_version};
 
 use directories::ProjectDirs;
 use std::path::Path;
@@ -20,10 +20,16 @@ pub enum Error {
     ResolveError(#[from] ResolveError),
 
     #[error(transparent)]
-    SetupError(#[from] SetupError),
+    LoggingSetupError(#[from] LoggingSetupError),
+
+    #[error(transparent)]
+    SetupError(#[from] ui_setup::Error),
 
     #[error("Cannot find file {}", .0.to_string_lossy())]
     FileNotFoundError(PathBuf),
+
+    #[error("No sources provided")]
+    NoSourcesError(),
 
     #[error("Failed to parse time: {}", .0)]
     ParseTimeError(String),
@@ -59,7 +65,7 @@ async fn resolve_address(hostname_arg: Option<String>) -> Result<std::net::IpAdd
 }
 
 #[derive(Error, Debug)]
-pub enum SetupError {
+pub enum LoggingSetupError {
     #[error(transparent)]
     InitLoggingError(#[from] log4rs::config::InitError),
 
@@ -67,7 +73,7 @@ pub enum SetupError {
     LogFileOpenError(#[from] std::io::Error),
 }
 
-fn init_logging(enable: bool) -> Result<(), SetupError> {
+fn init_logging(enable: bool) -> Result<(), LoggingSetupError> {
     if !enable {
         return Ok(());
     }
@@ -182,104 +188,8 @@ fn get_config_file(config_file_arg: Option<&str>) -> Result<String, Error> {
     Ok(config_file.to_string())
 }
 
-async fn actual_main() -> Result<(), Error> {
+async fn player_mode(args: clap::ArgMatches, config: config::Config) -> Result<(), Error> {
     let exit = exit::Exit::new();
-
-    let args = clap::App::new("koko")
-        .version(get_version().as_str())
-        .author("Erkki Seppälä <erkki.seppala@vincit.fi>")
-        .about("Remote Kontroller and streamer for Kodi")
-        .arg(
-            clap::Arg::new("SOURCE")
-                .required(true)
-                .index(1)
-                .multiple(true)
-                .about("File to stream"),
-        )
-        .arg(
-            clap::Arg::new("config")
-                .long("config")
-                .short('c')
-                .takes_value(true)
-                .about(
-                    format!(
-                        "Config file to load, defaults to {}",
-                        get_config_file(None)?
-                    )
-                    .as_str(),
-                ),
-        )
-        .arg(
-            clap::Arg::new("kodi")
-                .long("kodi")
-                .short('k')
-                .takes_value(true)
-                .about("Address of the host running Kodi; defaults to localhost"),
-        )
-        .arg(
-            clap::Arg::new("kodi_port")
-                .long("port")
-                .default_value("8080")
-                .takes_value(true)
-                .about("Port to use for HTTP connection (9090 will always be used for WebSocket)")
-                .validator(|arg| match arg.parse::<u16>() {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err(err.to_string()),
-                }),
-        )
-        .arg(
-            clap::Arg::new("server_port")
-                .long("listen")
-                .takes_value(true)
-                .about("Port to use for serverin HTTP data; default is 0, meaning automatic")
-                .validator(|arg| match arg.parse::<u16>() {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err(err.to_string()),
-                }),
-        )
-        .arg(
-            clap::Arg::new("user")
-                .long("user")
-                .short('u')
-                .default_value("kodi")
-                .takes_value(true)
-                .about("Username of the user for Kodi"),
-        )
-        .arg(
-            clap::Arg::new("password")
-                .long("pass")
-                .short('p')
-                .takes_value(true)
-                .about("Password for the user"),
-        )
-        .arg(
-            clap::Arg::new("start")
-                .long("start")
-                .short('s')
-                .takes_value(true)
-                .about("Start position, like 5m, or 5m5s, or 5s")
-                .validator(|arg| match parse_time_as_seconds(arg) {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err(err.to_string()),
-                }),
-        )
-        .arg(
-            clap::Arg::new("debug")
-                .long("debug")
-                .short('d')
-                .about("Write debug information"),
-        )
-        .arg(
-            clap::Arg::new("public")
-                .long("public")
-                .about("Don't do IP-based access control"),
-        )
-        .get_matches();
-
-    init_logging(args.is_present("debug"))?;
-
-    let config_file = get_config_file(args.value_of("config"))?;
-    let config = config::Config::load(&config_file)?;
     let host = config.get_host(args.value_of("kodi"))?;
 
     let kodi_address = resolve_address(host.hostname).await?;
@@ -321,6 +231,10 @@ async fn actual_main() -> Result<(), Error> {
     let mut url_counts = HashMap::new();
 
     let mut order_index = 0usize;
+
+    if args.occurrences_of("SOURCE") == 0 {
+        return Err(Error::NoSourcesError());
+    }
 
     for source in args.values_of_os("SOURCE").unwrap() {
         let path: PathBuf = Path::new(source).to_path_buf();
@@ -441,6 +355,124 @@ async fn actual_main() -> Result<(), Error> {
         Err(err) => eprintln!("error: {:?}", err),
     }
     Ok(())
+}
+
+async fn setup_mode(
+    _args: clap::ArgMatches,
+    config: config::Config,
+    config_file: &str,
+) -> Result<(), Error> {
+    let ui_setup = ui_setup::UiSetup::new(config, config_file);
+
+    Ok(ui_setup.run()?)
+}
+
+async fn actual_main() -> Result<(), Error> {
+    let args = clap::App::new("koko")
+        .version(get_version().as_str())
+        .author("Erkki Seppälä <erkki.seppala@vincit.fi>")
+        .about("Remote Kontroller and streamer for Kodi")
+        .arg(
+            clap::Arg::new("SOURCE")
+                .index(1)
+                .multiple(true)
+                .about("File to stream"),
+        )
+        .arg(
+            clap::Arg::new("config")
+                .long("config")
+                .short('c')
+                .takes_value(true)
+                .about(
+                    format!(
+                        "Config file to load, defaults to {}",
+                        get_config_file(None)?
+                    )
+                    .as_str(),
+                ),
+        )
+        .arg(
+            clap::Arg::new("setup")
+                .long("setup")
+                .about("Do setup (interactive config editor with host discovery)"),
+        )
+        .arg(
+            clap::Arg::new("kodi")
+                .long("kodi")
+                .short('k')
+                .takes_value(true)
+                .about("Address of the host running Kodi; defaults to localhost"),
+        )
+        .arg(
+            clap::Arg::new("kodi_port")
+                .long("port")
+                .default_value("8080")
+                .takes_value(true)
+                .about("Port to use for HTTP connection (9090 will always be used for WebSocket)")
+                .validator(|arg| match arg.parse::<u16>() {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                }),
+        )
+        .arg(
+            clap::Arg::new("server_port")
+                .long("listen")
+                .takes_value(true)
+                .about("Port to use for serverin HTTP data; default is 0, meaning automatic")
+                .validator(|arg| match arg.parse::<u16>() {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                }),
+        )
+        .arg(
+            clap::Arg::new("user")
+                .long("user")
+                .short('u')
+                .default_value("kodi")
+                .takes_value(true)
+                .about("Username of the user for Kodi"),
+        )
+        .arg(
+            clap::Arg::new("password")
+                .long("pass")
+                .short('p')
+                .takes_value(true)
+                .about("Password for the user"),
+        )
+        .arg(
+            clap::Arg::new("start")
+                .long("start")
+                .short('s')
+                .takes_value(true)
+                .about("Start position, like 5m, or 5m5s, or 5s")
+                .validator(|arg| match parse_time_as_seconds(arg) {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err.to_string()),
+                }),
+        )
+        .arg(
+            clap::Arg::new("debug")
+                .long("debug")
+                .short('d')
+                .about("Write debug information"),
+        )
+        .arg(
+            clap::Arg::new("public")
+                .long("public")
+                .about("Don't do IP-based access control"),
+        )
+        .get_matches();
+
+    init_logging(args.is_present("debug"))?;
+
+    let config_file = get_config_file(args.value_of("config"))?;
+    let config = config::Config::load(&config_file)?;
+
+    if args.is_present("setup") {
+        setup_mode(args, config, &config_file).await
+    } else {
+        player_mode(args, config).await
+    }
 }
 
 #[actix_web::main]
