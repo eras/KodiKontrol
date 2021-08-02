@@ -5,20 +5,13 @@ on: [push]
 jobs:
   notify_start:
     runs-on: ubuntu-latest
-    outputs:
-      git_describe: ${{ steps.git_describe.outputs.git_describe }}
     steps:
-      - uses: actions/checkout@v2
-      # https://stackoverflow.com/a/58178121
-      - name: Set release information
-        id: git_describe
-        run: echo ::set-output name=git_describe::"$(git describe --tags)"
       - name: Build started notification
         uses: s3krit/matrix-message-action@v0.0.3
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          message: "KodiKontrol ${{ steps.git_describe.outputs.git_describe }} build started. [Progress.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          message: "KodiKontrol ${{ github.sha }} build started. [Progress.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
   build:
     needs: notify_start
@@ -58,7 +51,7 @@ jobs:
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          message: "KodiKontrol ${{ needs.notify_start.outputs.git_describe }} build complete OK. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          message: "KodiKontrol ${{ github.sha }} build complete OK. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
   notify_end_failed:
     runs-on: ubuntu-latest
@@ -70,5 +63,5 @@ jobs:
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          message: "KodiKontrol ${{ needs.notify_start.outputs.git_describe }} build failed. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          message: "KodiKontrol ${{ github.sha }} build failed. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
