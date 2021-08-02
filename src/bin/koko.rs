@@ -327,21 +327,16 @@ async fn actual_main() -> Result<(), Error> {
         if !path.exists() {
             return Err(Error::FileNotFoundError(path));
         }
-        let url_name = path
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .expect("TODO: filename is required to be valid UTF8")
-            .to_string();
+        let url = path.file_stem().unwrap().to_string_lossy().to_string();
 
-        let mut count = if url_counts.contains_key(&url_name) {
-            let count: &u32 = url_counts.get(&url_name).unwrap();
+        let mut count = if url_counts.contains_key(&url) {
+            let count: &u32 = url_counts.get(&url).unwrap();
             let count = count + 1;
-            url_counts.insert(url_name.clone(), count);
+            url_counts.insert(url.clone(), count);
             count
         } else {
             let count = 1;
-            url_counts.insert(url_name.clone(), count);
+            url_counts.insert(url.clone(), count);
             count
         };
 
@@ -354,11 +349,11 @@ async fn actual_main() -> Result<(), Error> {
         }
 
         // maybe this algorithm gives wild names in some corner cases..
-        while files.contains_key(&name(&url_name, count)) {
+        while files.contains_key(&name(&url, count)) {
             count += 1;
         }
-        files.insert(name(&url_name, count), path);
-        urls_order.insert(name(&url_name, count), order_index);
+        files.insert(name(&url, count), path);
+        urls_order.insert(name(&url, count), order_index);
         order_index += 1;
     }
 
