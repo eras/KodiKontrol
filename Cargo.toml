@@ -30,8 +30,9 @@ atomicwrites = "0.3.0"
 directories = "3.0.2"
 
 # Non-windows specifics: https://github.com/rust-lang/cargo/issues/1197
-cursive = { version = "0.16.3" }
-clap = "3.0.0-beta.2"
+# Changes applied by scripts/cargo-toml-for-windows.ps1 used by the ci scripts for Windows
+cursive = { version = "0.16.3" } #_FOR_WINDOWS cursive = { version = "0.16.3", features = ["crossterm-backend"], default-features = false, optional = false }
+clap = "3.0.0-beta.2" #_FOR_WINDOWS clap = { version = "3.0.0-beta.2", features = ["std", "suggestions", "derive", "cargo"], default-features = false, optional = false }
 
 [build-dependencies]
 vergen = "3"

@@ -129,7 +129,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - run: 'Copy-Item -Path Cargo.windows.toml -Destination Cargo.toml'
+      - run: './scripts/cargo-toml-for-windows.ps1'
       - uses: actions/cache@v2
         with:
           path: |

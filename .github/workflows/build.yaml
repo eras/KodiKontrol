@@ -35,7 +35,7 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - run: 'Copy-Item -Path Cargo.windows.toml -Destination Cargo.toml'
+      - run: './scripts/cargo-toml-for-windows.ps1'
         if: ${{ matrix.os == 'windows-latest' }}
       - run: 'cargo build'
       - name: Build succeeded notification
