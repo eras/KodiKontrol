@@ -3,20 +3,30 @@ name: Build
 on: [push]
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  notify_start:
+    runs-on: ubuntu-latest
+    outputs:
+      git_describe: ${{ steps.git_describe.outputs.git_describe }}
     steps:
+      - uses: actions/checkout@v2
+      # https://stackoverflow.com/a/58178121
+      - name: Set release information
+        id: git_describe
+        run: echo ::set-output name=git_describe::"$(git describe --tags)"
       - name: Build started notification
         uses: s3krit/matrix-message-action@v0.0.3
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          message: "KodiKontrol build started. [Progress.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          message: "KodiKontrol ${{ steps.git_describe.outputs.git_describe }} build started. [Progress.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+  build:
+    needs: notify_start
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
       - uses: actions/checkout@v2
         with:
           submodules: true
@@ -38,19 +48,27 @@ jobs:
       - run: './scripts/cargo-toml-for-windows.ps1'
         if: ${{ matrix.os == 'windows-latest' }}
       - run: 'cargo build'
+  notify_end_success:
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    needs: [notify_start, build]
+    steps:
       - name: Build succeeded notification
-        if: ${{ success() && matrix.os == 'ubuntu-latest' }}
         uses: s3krit/matrix-message-action@v0.0.3
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          message: "KodiKontrol build complete. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          message: "KodiKontrol ${{ needs.notify_start.outputs.git_describe }} build complete OK. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
+  notify_end_failed:
+    runs-on: ubuntu-latest
+    needs: [notify_start, build]
+    if: ${{ !success() }}
+    steps:
       - name: Build failed notification
-        if: ${{ !success() && matrix.os == 'ubuntu-latest' }}
         uses: s3krit/matrix-message-action@v0.0.3
         with:
           room_id: ${{ secrets.MATRIX_ROOM_ID }}
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          message: "KodiKontrol build failed. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
+          message: "KodiKontrol ${{ needs.notify_start.outputs.git_describe }} build failed. [Logs.](https://github.com/eras/KodiKontrol/actions/runs/${{github.run_id}})"
           server: ${{ secrets.MATRIX_SERVER }}
