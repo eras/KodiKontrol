@@ -1,3 +1,6 @@
 [submodule "ext/async-jsonrpc"]
 	path = ext/async-jsonrpc
 	url = ../async-jsonrpc
+[submodule "ext/mdns"]
+	path = ext/mdns
+	url = ../mdns
