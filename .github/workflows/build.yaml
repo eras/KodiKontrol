@@ -41,6 +41,20 @@ jobs:
       - run: './scripts/cargo-toml-for-windows.ps1'
         if: ${{ matrix.os == 'windows-latest' }}
       - run: 'cargo build'
+      - uses: actions/upload-artifact@v2
+        with:
+          name: koko-${{ runner.os }}
+          path: |
+            target/debug/koko
+            Cargo.lock
+        if: ${{ matrix.os != 'windows-latest' }}
+      - uses: actions/upload-artifact@v2
+        with:
+          name: koko-${{ runner.os }}.exe
+          path: |
+            target/debug/koko.exe
+            Cargo.lock
+        if: ${{ matrix.os == 'windows-latest' }}
   notify_end_success:
     runs-on: ubuntu-latest
     if: ${{ success() }}
