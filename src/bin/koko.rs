@@ -58,10 +58,14 @@ pub enum Error {
 async fn resolve_address(
     hostname_arg: Option<String>,
     discovery: bool,
-) -> Result<std::net::IpAddr, Error> {
+    override_port: Option<u16>,
+) -> Result<discover::Service, Error> {
     match hostname_arg {
         Some(hostname) if discovery => match discover::discover_first(hostname.as_str()).await {
-            Ok(Some(host)) => Ok(host),
+            Ok(Some(service)) => Ok(discover::Service {
+                port: override_port.or(service.port),
+                ..service
+            }),
             Ok(None) => Err(Error::CannotDiscoverHostError(hostname)),
             Err(err) => Err(Error::DiscoverError(err)),
         },
@@ -75,10 +79,17 @@ async fn resolve_address(
                         .await
                         .map_err(|err| Error::ResolveNameError(hostname.clone(), err.to_string()))
                     {
-                        Ok(resolve) => Ok(resolve.iter().next().unwrap()),
+                        Ok(resolve) => Ok(discover::Service {
+                            name: hostname.clone(),
+                            address: resolve.iter().next().unwrap(),
+                            port: override_port,
+                        }),
                         Err(Error::ResolveNameError(hostname, err)) if discovery => {
                             match discover::discover_first(hostname.as_str()).await {
-                                Ok(Some(hostname)) => Ok(hostname),
+                                Ok(Some(service)) => Ok(discover::Service {
+                                    port: override_port.or(service.port),
+                                    ..service
+                                }),
                                 Ok(None) => Err(Error::ResolveNameError(hostname, err)),
                                 Err(err) => Err(Error::DiscoverError(err)),
                             }
@@ -86,7 +97,11 @@ async fn resolve_address(
                         Err(err) => Err(err),
                     }
                 }
-                None => Ok("127.0.0.1".parse().unwrap()),
+                None => Ok(discover::Service {
+                    name: String::from("localhost"),
+                    address: "127.0.0.1".parse().unwrap(),
+                    port: override_port,
+                }),
             }
         }
     }
@@ -220,8 +235,11 @@ async fn player_mode(args: clap::ArgMatches, config: config::Config) -> Result<(
     let exit = exit::Exit::new();
     let host = config.get_host(args.value_of("kodi"))?;
 
-    let kodi_address = resolve_address(host.hostname, host.discovery).await?;
-    let kodi_port = args.value_of("kodi_port").unwrap().parse::<u16>()?;
+    let kodi_port = args
+        .value_of("kodi_port")
+        .map(|x| x.parse::<u16>())
+        .transpose()?;
+    let kodi_address = resolve_address(host.hostname, host.discovery, kodi_port).await?;
     let http_server_port = {
         let server_port = args
             .value_of("server_port")
@@ -364,7 +382,6 @@ async fn player_mode(args: clap::ArgMatches, config: config::Config) -> Result<(
 
     let session_result = server::Session::new(
         app_data,
-        kodi_port,
         http_server_port,
         session_tx,
         exit.clone(),
@@ -441,7 +458,6 @@ async fn actual_main() -> Result<(), Error> {
         .arg(
             clap::Arg::new("kodi_port")
                 .long("port")
-                .default_value("8080")
                 .takes_value(true)
                 .about("Port to use for HTTP connection (9090 will always be used for WebSocket)")
                 .validator(|arg| match arg.parse::<u16>() {

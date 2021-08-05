@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use thiserror::Error;
 
-use crate::{error, exit, kodi_control, kodi_rpc, version::get_version};
+use crate::{discover, error, exit, kodi_control, kodi_rpc, version::get_version};
 
 use url::Url;
 
@@ -28,7 +28,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
     let addr = req.peer_addr().unwrap(); // documentation says this is not None
     let mut app_data = data.lock().unwrap();
     // TODO: handle IPv4 inside IPv6
-    if addr.ip() == app_data.kodi_address || !app_data.ip_access_control {
+    if addr.ip() == app_data.kodi_address.address || !app_data.ip_access_control {
         let filename = req.match_info().query("filename");
         match app_data.files.get(filename) {
             Some(path) => {
@@ -58,7 +58,7 @@ pub async fn static_files(req: HttpRequest) -> HttpResponse {
 }
 
 pub struct AppData {
-    pub kodi_address: std::net::IpAddr,
+    pub kodi_address: discover::Service,
     pub ip_access_control: bool,
     pub kodi_auth: Option<(String, String)>,
     pub files: HashMap<String, PathBuf>,
@@ -123,27 +123,21 @@ impl Session {
     // will return once the server has finished
     pub async fn new(
         app_data: AppDataHolder,
-        kodi_port: u16,
         http_server_port: u16,
         result: tokio::sync::oneshot::Sender<Session>,
         exit: exit::Exit,
         kodi_control_args: kodi_control::Args,
     ) -> Result<(), Error> {
+        let kodi_address = app_data.lock().unwrap().kodi_address.clone();
         let url = Url::parse(
             format!(
                 "http://{}:{}/jsonrpc",
-                app_data.lock().unwrap().kodi_address,
-                kodi_port
+                kodi_address.address,
+                kodi_address.port.unwrap_or(8080)
             )
             .as_str(),
         )?;
-        let wsurl = Url::parse(
-            format!(
-                "ws://{}:9090/jsonrpc",
-                app_data.lock().unwrap().kodi_address
-            )
-            .as_str(),
-        )?;
+        let wsurl = Url::parse(format!("ws://{}:9090/jsonrpc", kodi_address.address).as_str())?;
         let auth = app_data.lock().unwrap().kodi_auth.clone();
         let jsonrpc_info = kodi_rpc::jsonrpc_get(&url, &auth).await?;
 

@@ -10,7 +10,7 @@ use crate::ui_callback::*;
 
 use std::collections::BTreeMap;
 
-use crate::{config, exit::Exit, ui_discovery, version};
+use crate::{config, discover, exit::Exit, ui_discovery, version};
 
 use thiserror::Error;
 
@@ -208,10 +208,11 @@ fn edit_view_content(siv: &mut Cursive, name: &str) -> String {
     .unwrap()
 }
 
-fn add_discovered_dialog(siv: &mut Cursive, record: mdns::Record) {
-    let hostname = record.name.clone();
+fn add_discovered_dialog(siv: &mut Cursive, service: discover::Service) {
+    let hostname = service.name.clone();
     let host = config::Host {
         hostname: Some(hostname.clone()),
+        port: service.port,
         discovery: true,
         ..Default::default()
     };
