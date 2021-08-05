@@ -2,7 +2,8 @@ use cursive::traits::*;
 use cursive::utils::span::SpannedString;
 use cursive::view::Margins;
 use cursive::views::{
-    Button, Checkbox, Dialog, DummyView, EditView, LinearLayout, ScrollView, SelectView, TextView,
+    Button, Checkbox, Dialog, DummyView, EditView, LinearLayout, OnEventView, ScrollView,
+    SelectView, TextView,
 };
 use cursive::{Cursive, CursiveExt};
 
@@ -73,7 +74,7 @@ impl UpdateDialog {
                     .child(make_edit_view(
                         "   Hostname: ",
                         "hostname",
-                        40,
+                        60,
                         host.hostname.clone().unwrap_or(label.clone()),
                     ))
                     .child(
@@ -212,15 +213,16 @@ fn add_discovered_dialog(siv: &mut Cursive, service: discover::Service) {
     let hostname = service.name.clone();
     let host = config::Host {
         hostname: Some(hostname.clone()),
-        port: service.port,
+        port: None, // disregard the port: we want to use discovery for the port in future as well
         discovery: true,
         ..Default::default()
     };
-    UpdateDialog::open(siv, (hostname.clone(), host), false).on_ok(
+    UpdateDialog::open(siv, (ui_discovery::shorten_name(&hostname), host), false).on_ok(
         move |siv: &mut Cursive, (label, host): (String, config::Host)| -> bool {
             siv.call_on_name("config_hosts", move |config_hosts: &mut ConfigHostsView| {
                 let index = config_hosts.len();
-                config_hosts.add_item(label.clone(), (index, label.clone(), host.clone()));
+                let label = ui_discovery::shorten_name(&label);
+                config_hosts.add_item(label.clone(), (index, label, host.clone()));
                 true
             });
             true
@@ -341,14 +343,18 @@ impl UiSetup {
             .child(DummyView)
             .child(Button::new("Save and exit", save))
             .child(DummyView)
-            .child(Button::new("Exit without saving", cancel));
+            .child(Button::new("Quit without saving", cancel));
 
         let top_level_view = LinearLayout::vertical()
             .child(config_file_view)
             .child(DummyView)
             .child(hosts)
             .child(DummyView)
-            .child(buttons);
+            .child(buttons)
+            .wrap_with(OnEventView::new)
+            .on_event('n', add_dialog)
+            .on_event('q', cancel)
+            .on_event('s', save);
 
         siv.add_layer(
             Dialog::around(LinearLayout::horizontal().child(top_level_view))

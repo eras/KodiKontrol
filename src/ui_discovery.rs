@@ -7,6 +7,8 @@ use crate::{discover, exit::Exit, ui_callback::*};
 
 use crossbeam_channel::{unbounded, Receiver};
 
+use regex::Regex;
+
 type CursiveCbSink = crossbeam_channel::Sender<Box<dyn FnOnce(&mut Cursive) + 'static + Send>>;
 
 type DiscoveryHostsView = SelectView<discover::Service>;
@@ -64,7 +66,7 @@ impl UiDiscovery {
                 hosts.add_item(
                     format!(
                         "{} at {}{}",
-                        service.name,
+                        shorten_name(&service.name),
                         service.address,
                         service
                             .port
@@ -93,4 +95,10 @@ impl UiDiscovery {
             }
         }
     }
+}
+
+pub fn shorten_name(name: &str) -> String {
+    let re = Regex::new(r"\..*").unwrap();
+    let short_name = re.replace(name, "").to_string();
+    short_name
 }
