@@ -140,9 +140,16 @@ impl UpdateDialog {
             } else {
                 dialog
             };
-            dialog.button("Cancel", |siv| {
+            let dialog = dialog.button("Cancel", |siv| {
                 siv.pop_layer();
-            })
+            });
+            let dialog = dialog.wrap_with(OnEventView::new).on_event(
+                cursive::event::Event::Key(cursive::event::Key::Esc),
+                |siv| {
+                    siv.pop_layer();
+                },
+            );
+            dialog
         });
 
         Self {
@@ -354,7 +361,8 @@ impl UiSetup {
             .wrap_with(OnEventView::new)
             .on_event('n', add_dialog)
             .on_event('q', cancel)
-            .on_event('s', save);
+            .on_event('s', save)
+            .on_event(cursive::event::Event::Key(cursive::event::Key::Esc), cancel);
 
         siv.add_layer(
             Dialog::around(LinearLayout::horizontal().child(top_level_view))
