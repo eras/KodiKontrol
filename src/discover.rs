@@ -58,17 +58,20 @@ pub async fn discover(tx: crossbeam_channel::Sender<Record>, mut exit: Exit) -> 
         let mut seen = HashSet::new();
 
         while let Some(Ok(response)) = stream.next().await {
-            log::info!("Got a record");
             for record in response.records() {
-                log::info!("Passing record");
-                // lol
-                let record_str = format!("{:?}", record);
-                if !seen.contains(&record_str) {
-                    seen.insert(record_str);
+                log::info!("Got a record {:?}", record);
+                if !seen.contains(&record.clone()) {
+                    log::info!("New record");
+                    seen.insert(record.clone());
                     if let Err(_) = tx.send(record.clone()) {
                         log::info!("Failed to pass record: exiting");
                         return Ok(());
                     }
+                } else {
+                    log::info!(
+                        "Skipped duplicate record. Previous record: {:?}",
+                        seen.get(&record.clone()).unwrap()
+                    );
                 }
             }
         }
