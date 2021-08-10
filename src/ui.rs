@@ -363,8 +363,6 @@ impl Ui {
     pub fn finish(mut self) {
         let ui_data: UiData = self.siv.take_user_data().unwrap();
         ui_data.exit.signal();
-        self.polling_thread
-            .join()
-            .expect("Failed to join polling thread");
+        let _ignore = self.polling_thread.join();
     }
 }

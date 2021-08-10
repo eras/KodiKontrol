@@ -389,7 +389,7 @@ async fn player_mode(args: clap::ArgMatches, config: config::Config) -> Result<(
     )
     .await;
     ui_control.quit();
-    ui_join.await.expect("Failed to join ui_join");
+    let _ignore = ui_join.await;
     match app_join.await.expect("Failed to join app_join") {
         Ok(()) => (),
         Err(err) => eprintln!("error: {:?}", err),
